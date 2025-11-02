@@ -1,0 +1,17 @@
+# Streamlit configuration for basīrah UI
+
+[theme]
+primaryColor = "#1f77b4"        # Professional blue
+backgroundColor = "#ffffff"      # Clean white
+secondaryBackgroundColor = "#f0f2f6"  # Light gray
+textColor = "#262730"           # Dark text
+font = "sans serif"
+
+[server]
+headless = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
