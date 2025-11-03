@@ -25,6 +25,8 @@
 - **📊 Multi-Year Analysis** - Configurable 1-10 year trend analysis for deep insights
 - **🧠 Adaptive Context Management** - Handles any company size with intelligent summarization
 - **💬 Authentic Buffett Voice** - Generates theses that sound like Berkshire Hathaway shareholder letters
+- **💰 Real-Time Cost Tracking** - Transparent token usage and cost display for every analysis
+- **🌍 Arabic Translation** - One-click translation with proper RTL formatting for global investors
 - **🌐 Professional Web UI** - Beautiful Streamlit interface for easy access
 - **✅ 100% Coverage** - Successfully analyzes all S&P 500 companies
 
@@ -55,6 +57,8 @@
 
 - **Streamlit UI** - Professional web application
 - **Real-time Progress** - Live updates during 5-7 minute analyses
+- **Cost Tracking** - Real-time token usage and cost display with session totals
+- **Arabic Translation** - One-click translation with proper RTL formatting
 - **Dynamic Estimates** - Cost and time predictions based on configuration
 - **Export & Share** - Download results as JSON or Markdown
 - **Mobile Responsive** - Works on any device
@@ -145,6 +149,7 @@ print(json.dumps(result, indent=2))
 - **[Phase 5 User Guide](docs/phases/phase_5/PHASE_5_USER_GUIDE.md)** - Context management and adaptive summarization
 - **[UI Guide](docs/phases/phase_6a/UI_README.md)** - Complete Streamlit web interface documentation
 - **[Configurable Years](docs/phases/phase_6a/FEATURE_CONFIGURABLE_YEARS.md)** - How to configure analysis depth
+- **[Cost Display + Arabic Translation](docs/phases/phase_6a/PHASE_6A2_COMPLETION_SUMMARY.md)** - Token tracking, cost display, and multilingual support
 
 ### Technical Documentation
 
@@ -160,6 +165,8 @@ print(json.dumps(result, indent=2))
 - [Phase 4](docs/phases/phase_4/) - Production readiness
 - [Phase 5](docs/phases/phase_5/) - Context management (100% coverage)
 - [Phase 6A](docs/phases/phase_6a/) - Web UI and enhancements
+  - Phase 6A.1: Complete thesis fix and configurable years
+  - Phase 6A.2: Cost tracking and Arabic translation
 
 ---
 
@@ -227,7 +234,8 @@ User Input → Validation → Agent Initialization
 basira-agent/
 ├── src/
 │   ├── agent/
-│   │   └── buffett_agent.py       # Main agent implementation
+│   │   ├── buffett_agent.py       # Main agent implementation
+│   │   └── translator.py          # Arabic translation module
 │   ├── tools/
 │   │   ├── sec_filing_tool.py     # SEC EDGAR integration
 │   │   ├── gurufocus_tool.py      # Financial data API

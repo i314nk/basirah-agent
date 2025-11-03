@@ -17,6 +17,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.agent.buffett_agent import WarrenBuffettAgent
+from src.agent.translator import ThesisTranslator
 from src.ui.components import (
     render_header,
     render_ticker_input,
@@ -24,12 +25,15 @@ from src.ui.components import (
     render_progress_info,
     render_results,
     render_footer,
-    render_sidebar_info
+    render_sidebar_info,
+    display_cost_information,
+    display_thesis_with_translation
 )
 from src.ui.utils import (
     validate_ticker,
     estimate_cost,
-    estimate_duration
+    estimate_duration,
+    estimate_analysis_cost
 )
 
 # Page config
@@ -76,8 +80,46 @@ def main():
     # Render header
     render_header()
 
+    # Initialize translator (cache in session state)
+    if 'translator' not in st.session_state:
+        st.session_state['translator'] = ThesisTranslator()
+
+    translator = st.session_state['translator']
+
     # Sidebar info
     render_sidebar_info()
+
+    # Session cost tracking in sidebar
+    with st.sidebar:
+        st.divider()
+        st.markdown("### 💰 Session Costs")
+
+        if 'session_costs' not in st.session_state:
+            st.session_state['session_costs'] = []
+        if 'session_translation_costs' not in st.session_state:
+            st.session_state['session_translation_costs'] = []
+
+        analysis_costs = st.session_state['session_costs']
+        translation_costs = st.session_state['session_translation_costs']
+
+        if analysis_costs or translation_costs:
+            total_analysis = sum(analysis_costs)
+            total_translation = sum(translation_costs)
+            total_cost = total_analysis + total_translation
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Analyses", len(analysis_costs))
+            with col2:
+                st.metric("Translations", len(translation_costs))
+
+            st.metric("Total Spent", f"${total_cost:.2f}")
+
+            with st.expander("💸 Cost Breakdown"):
+                st.write(f"**Analysis Costs:** ${total_analysis:.2f}")
+                st.write(f"**Translation Costs:** ${total_translation:.2f}")
+        else:
+            st.info("No analyses yet")
 
     # Advanced settings in sidebar
     with st.sidebar:
@@ -139,7 +181,16 @@ def main():
     if 'last_result' in st.session_state and st.session_state['last_result'] is not None:
         st.divider()
         st.markdown("## 📊 Latest Analysis")
-        render_results(st.session_state['last_result'])
+        result = st.session_state['last_result']
+
+        # Render basic results (without thesis)
+        render_results(result)
+
+        # Display cost information
+        display_cost_information(result)
+
+        # Display thesis with translation option
+        display_thesis_with_translation(result, translator)
 
     # Footer
     render_footer()
@@ -154,19 +205,28 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         deep_dive: Whether to run deep dive analysis
         years_to_analyze: Number of years to analyze (for deep dive)
     """
+    # Get detailed cost estimate
+    cost_estimate = estimate_analysis_cost(
+        "deep_dive" if deep_dive else "quick",
+        years_to_analyze
+    )
+
     # Analysis info
     analysis_type = "Deep Dive" if deep_dive else "Quick Screen"
-    estimated_time = estimate_duration(deep_dive)
-    estimated_cost = estimate_cost(deep_dive)
 
     st.markdown(f"""
     ### 🚀 Starting {analysis_type} Analysis
 
     **Company:** {ticker}
     **Years to Analyze:** {years_to_analyze if deep_dive else 'N/A (Quick Screen)'}
-    **Estimated Time:** {estimated_time}
-    **Estimated Cost:** ${estimated_cost:.2f}
     """)
+
+    # Show cost estimate
+    st.info(
+        f"💰 **Estimated Cost:** ${cost_estimate['estimated_cost']:.2f} "
+        f"(${cost_estimate['min_cost']:.2f} - ${cost_estimate['max_cost']:.2f})\n\n"
+        f"⏱️ **Estimated Duration:** ~{cost_estimate['duration_minutes']} minutes"
+    )
 
     # Progress container
     progress_container = st.empty()
@@ -209,6 +269,13 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         # Clear progress indicators
         progress_container.empty()
         status_container.empty()
+
+        # Track session costs (if token usage available)
+        if "token_usage" in result.get("metadata", {}):
+            cost = result["metadata"]["token_usage"]["total_cost"]
+            if 'session_costs' not in st.session_state:
+                st.session_state['session_costs'] = []
+            st.session_state['session_costs'].append(cost)
 
         # Success message
         st.success(

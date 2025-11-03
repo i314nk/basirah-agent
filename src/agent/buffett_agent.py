@@ -193,6 +193,10 @@ class WarrenBuffettAgent:
         """
         start_time = datetime.now()
 
+        # Reset token counters for this analysis
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+
         logger.info("=" * 80)
         logger.info(f"  Warren Buffett AI - Analyzing {ticker}")
         logger.info("=" * 80)
@@ -1525,6 +1529,14 @@ Now write your complete investment thesis with all 10 sections.
                     }
                 )
 
+                # Track token usage for cost calculation
+                if not hasattr(self, '_total_input_tokens'):
+                    self._total_input_tokens = 0
+                    self._total_output_tokens = 0
+
+                self._total_input_tokens += response.usage.input_tokens
+                self._total_output_tokens += response.usage.output_tokens
+
                 # Process response blocks
                 assistant_content = []
                 tool_uses = []
@@ -1589,9 +1601,22 @@ Now write your complete investment thesis with all 10 sections.
 
                 # Parse decision from final text
                 decision_data = self._parse_decision(ticker, final_text)
+
+                # Calculate costs
+                input_cost = (self._total_input_tokens / 1000) * 0.01
+                output_cost = (self._total_output_tokens / 1000) * 0.30
+                total_cost = input_cost + output_cost
+
                 decision_data["metadata"] = {
                     "analysis_date": datetime.now().isoformat(),
-                    "tool_calls_made": tool_calls_made
+                    "tool_calls_made": tool_calls_made,
+                    "token_usage": {
+                        "input_tokens": self._total_input_tokens,
+                        "output_tokens": self._total_output_tokens,
+                        "input_cost": round(input_cost, 2),
+                        "output_cost": round(output_cost, 2),
+                        "total_cost": round(total_cost, 2)
+                    }
                 }
 
                 return decision_data

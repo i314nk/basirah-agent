@@ -91,6 +91,59 @@ def estimate_duration(deep_dive: bool) -> str:
     return "5-7 minutes" if deep_dive else "30-60 seconds"
 
 
+def estimate_analysis_cost(analysis_type: str, years_to_analyze: int) -> dict:
+    """
+    Estimate the cost of an analysis based on historical data.
+
+    Args:
+        analysis_type: "quick" or "deep_dive"
+        years_to_analyze: Number of years to analyze (1-10)
+
+    Returns:
+        dict with estimated_cost, min_cost, max_cost, duration_minutes
+
+    Examples:
+        >>> estimate_analysis_cost("quick", 1)
+        {'estimated_cost': 0.5, 'min_cost': 0.4, 'max_cost': 0.6, 'duration_minutes': 1}
+        >>> estimate_analysis_cost("deep_dive", 3)
+        {'estimated_cost': 2.5, 'min_cost': 2.0, 'max_cost': 3.0, 'duration_minutes': 6}
+        >>> estimate_analysis_cost("deep_dive", 5)
+        {'estimated_cost': 4.5, 'min_cost': 3.6, 'max_cost': 5.4, 'duration_minutes': 12}
+    """
+    # Historical cost data (approximate)
+    if analysis_type == "quick":
+        base_cost = 0.50
+        time_minutes = 1
+    else:  # deep_dive
+        if years_to_analyze == 1:
+            base_cost = 1.50
+            time_minutes = 3
+        elif years_to_analyze == 3:
+            base_cost = 2.50
+            time_minutes = 6
+        elif years_to_analyze == 5:
+            base_cost = 4.50
+            time_minutes = 12
+        elif years_to_analyze >= 10:
+            base_cost = 7.00
+            time_minutes = 25
+        else:
+            # Interpolate for other values
+            base_cost = 1.50 + (years_to_analyze - 1) * 0.75
+            time_minutes = 3 + (years_to_analyze - 1) * 3
+
+    # Add variance margin
+    min_cost = round(base_cost * 0.8, 2)
+    max_cost = round(base_cost * 1.2, 2)
+
+    return {
+        "estimated_cost": round(base_cost, 2),
+        "min_cost": min_cost,
+        "max_cost": max_cost,
+        "duration_minutes": time_minutes
+    }
+
+
 def format_currency(value: Optional[float]) -> str:
     """
     Format currency value.
