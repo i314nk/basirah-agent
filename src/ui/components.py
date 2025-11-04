@@ -106,43 +106,73 @@ def render_results(result: Dict[str, Any]):
         st.markdown("## 📝 Investment Analysis Results")
         st.divider()
 
-        # Decision badge
-        decision = result.get('decision', 'ERROR')
-        conviction = result.get('conviction', 'UNKNOWN')
-        emoji = get_decision_emoji(decision)
+        # Check if this is a Quick Screen (no intrinsic value calculated)
+        is_quick_screen = result.get('intrinsic_value') is None
 
-        if decision == 'BUY':
-            st.success(f"{emoji} **{decision}** - {conviction} Conviction")
-        elif decision == 'AVOID':
-            st.error(f"{emoji} **{decision}** - {conviction} Conviction")
-        elif decision == 'WATCH':
-            st.warning(f"{emoji} **{decision}** - {conviction} Conviction")
+        if is_quick_screen:
+            # Extract Quick Screen recommendation from thesis
+            thesis = result.get('thesis', '').upper()  # Convert to uppercase for case-insensitive matching
+
+            # Check for various patterns of INVESTIGATE recommendation
+            if any(pattern in thesis for pattern in [
+                '🟢 INVESTIGATE',
+                'INVESTIGATE',
+                'RECOMMENDATION: INVESTIGATE',
+                'RECOMMENDATION:** INVESTIGATE',
+                'RECOMMENDATION: 🟢 INVESTIGATE',
+                'DEEP DIVE RECOMMENDATION\n\n**RECOMMENDATION:** 🟢 INVESTIGATE'
+            ]):
+                st.success("🟢 **INVESTIGATE** - Deep Dive Recommended")
+            # Check for various patterns of PASS recommendation
+            elif any(pattern in thesis for pattern in [
+                '🔴 PASS',
+                'RECOMMENDATION: PASS',
+                'RECOMMENDATION:** PASS',
+                'RECOMMENDATION: 🔴 PASS',
+                'DEEP DIVE RECOMMENDATION\n\n**RECOMMENDATION:** 🔴 PASS'
+            ]):
+                st.error("🔴 **PASS** - Skip Deep Dive")
+            else:
+                st.info("⚪ **UNCLEAR** - Review Analysis")
         else:
-            st.error(f"{emoji} **{decision}**")
+            # Deep Dive: Show traditional decision
+            decision = result.get('decision', 'ERROR')
+            conviction = result.get('conviction', 'UNKNOWN')
+            emoji = get_decision_emoji(decision)
+
+            if decision == 'BUY':
+                st.success(f"{emoji} **{decision}** - {conviction} Conviction")
+            elif decision == 'AVOID':
+                st.error(f"{emoji} **{decision}** - {conviction} Conviction")
+            elif decision == 'WATCH':
+                st.warning(f"{emoji} **{decision}** - {conviction} Conviction")
+            else:
+                st.error(f"{emoji} **{decision}**")
 
         st.markdown("---")
 
-        # Key Metrics
-        st.markdown("### Key Metrics")
-        col1, col2, col3, col4 = st.columns(4)
+        # Key Metrics (only show for Deep Dive)
+        if not is_quick_screen:
+            st.markdown("### Key Metrics")
+            col1, col2, col3, col4 = st.columns(4)
 
-        with col1:
-            iv = result.get('intrinsic_value')
-            st.metric("Intrinsic Value", format_currency(iv))
+            with col1:
+                iv = result.get('intrinsic_value')
+                st.metric("Intrinsic Value", format_currency(iv))
 
-        with col2:
-            cp = result.get('current_price')
-            st.metric("Current Price", format_currency(cp))
+            with col2:
+                cp = result.get('current_price')
+                st.metric("Current Price", format_currency(cp))
 
-        with col3:
-            mos = result.get('margin_of_safety', 0)
-            st.metric("Margin of Safety", format_percentage(mos))
+            with col3:
+                mos = result.get('margin_of_safety', 0)
+                st.metric("Margin of Safety", format_percentage(mos))
 
-        with col4:
-            duration = result.get('metadata', {}).get('analysis_duration_seconds', 0)
-            st.metric("Analysis Time", format_duration(duration))
+            with col4:
+                duration = result.get('metadata', {}).get('analysis_duration_seconds', 0)
+                st.metric("Analysis Time", format_duration(duration))
 
-        st.markdown("---")
+            st.markdown("---")
 
         # Context Management Info (if deep dive)
         cm = result.get('metadata', {}).get('context_management', {})
@@ -313,6 +343,146 @@ def display_cost_information(result: Dict[str, Any]):
         st.metric("Total Cost", f"${usage['total_cost']:.2f}")
         cost_per_1k = usage['total_cost'] / usage['output_tokens'] * 1000 if usage['output_tokens'] > 0 else 0
         st.caption(f"${cost_per_1k:.3f} per 1K output")
+
+
+def display_quick_screen_recommendation(result: Dict[str, Any]):
+    """
+    Display quick screen recommendation prominently.
+
+    Args:
+        result: Analysis result with thesis
+    """
+    thesis = result.get('thesis', '')
+
+    # Extract recommendation (look for 🟢 INVESTIGATE or 🔴 PASS)
+    if '🟢 INVESTIGATE' in thesis or 'RECOMMENDATION:** 🟢 INVESTIGATE' in thesis:
+        recommendation = 'INVESTIGATE'
+        emoji = '🟢'
+        color = 'green'
+        message = 'Deep Dive Recommended'
+    elif '🔴 PASS' in thesis or 'RECOMMENDATION:** 🔴 PASS' in thesis:
+        recommendation = 'PASS'
+        emoji = '🔴'
+        color = 'red'
+        message = 'Skip Deep Dive'
+    else:
+        recommendation = 'UNCLEAR'
+        emoji = '⚪'
+        color = 'gray'
+        message = 'Review Required'
+
+    # Display prominent recommendation card
+    st.divider()
+
+    if recommendation == 'INVESTIGATE':
+        st.success(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("""
+        **This company shows potential and deserves deeper investigation.**
+
+        Consider running a **Deep Dive Analysis** to:
+        - Read complete 10-Ks across multiple years
+        - Assess management quality in detail
+        - Calculate precise intrinsic value
+        - Make final investment decision
+        """)
+
+        # Add button for deep dive
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔍 Run Deep Dive Analysis", type="primary", use_container_width=True):
+                st.session_state['run_deep_dive'] = True
+                st.session_state['deep_dive_ticker'] = result.get('ticker')
+                st.rerun()
+
+    elif recommendation == 'PASS':
+        st.error(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("""
+        **This company doesn't meet the quality criteria for further analysis.**
+
+        Better to spend time finding truly exceptional businesses than trying
+        to make mediocre ones work. As Warren says: *"It's far better to buy
+        a wonderful company at a fair price than a fair company at a wonderful price."*
+        """)
+
+    else:
+        st.warning(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("Review the analysis below for details.")
+
+
+def display_sharia_screening_result(result: Dict[str, Any]):
+    """
+    Display Sharia compliance screening results.
+
+    Args:
+        result: Sharia screening result dictionary
+    """
+    status = result.get('status', 'UNCLEAR')
+    purification_rate = result.get('purification_rate', 0.0)
+    analysis = result.get('analysis', '')
+
+    st.divider()
+    st.subheader("☪️ Sharia Compliance Status")
+
+    # Status card with appropriate color
+    if status == "COMPLIANT":
+        st.success("### ✅ COMPLIANT")
+        st.markdown("""
+        **This company meets AAOIFI standards for Sharia compliance.**
+
+        - ✅ Permissible business activities
+        - ✅ Financial ratios within limits
+        - ✅ No purification required
+        - ✅ Suitable for all Muslim investors
+        """)
+
+    elif status == "DOUBTFUL":
+        st.warning(f"### ⚠️ DOUBTFUL (Purification Required)")
+        st.markdown(f"""
+        **This company has minor non-compliant elements.**
+
+        - ⚠️ Contains <5% non-compliant income
+        - ⚠️ Requires dividend purification: **{purification_rate:.1f}%**
+        - ✅ Suitable for moderate interpretations
+        - ❌ May not suit strict interpretations
+
+        **Purification Example:**
+        For every $100 in dividends: Donate ${purification_rate:.2f} to charity
+        """)
+
+    elif status == "NON-COMPLIANT":
+        st.error("### ❌ NON-COMPLIANT")
+        st.markdown("""
+        **This company does not meet AAOIFI standards.**
+
+        - ❌ Significant prohibited activities OR
+        - ❌ Financial ratios exceed thresholds
+        - ❌ Not suitable for Sharia portfolios
+        - 💡 Consider halal alternatives
+        """)
+
+    else:
+        st.info("### ⚪ STATUS UNCLEAR")
+        st.markdown("Review the detailed analysis below.")
+
+    # Display full analysis
+    st.divider()
+    st.markdown("### 📋 Detailed Analysis")
+    st.markdown(analysis)
+
+
+def display_analysis_type_badge(analysis_type: str):
+    """
+    Display badge showing which analysis type was run.
+
+    Args:
+        analysis_type: "quick" | "deep_dive" | "sharia"
+    """
+    if analysis_type == "quick":
+        st.info("⚡ **Quick Screen** - 1-year snapshot + Deep Dive recommendation")
+    elif analysis_type == "deep_dive":
+        st.success("🔍 **Deep Dive** - Complete multi-year Warren Buffett analysis")
+    elif analysis_type == "sharia":
+        st.warning("☪️ **Sharia Compliance** - AAOIFI standard Islamic finance screening")
 
 
 def display_thesis_with_translation(result: Dict[str, Any], translator):

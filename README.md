@@ -22,6 +22,8 @@
 ### What Makes basīrah Unique
 
 - **📖 Reads Full 10-K Filings** - Analyzes 200+ page annual reports like Warren Buffett does
+- **⚡ Smart Quick Screen** - Get INVESTIGATE/PASS guidance before spending on full analysis
+- **☪️ Sharia Compliance** - AAOIFI-standard Islamic finance screening for halal investing
 - **📊 Multi-Year Analysis** - Configurable 1-10 year trend analysis for deep insights
 - **🧠 Adaptive Context Management** - Handles any company size with intelligent summarization
 - **💬 Authentic Buffett Voice** - Generates theses that sound like Berkshire Hathaway shareholder letters
@@ -36,8 +38,9 @@
 
 ### 🎯 Core Capabilities
 
-- **Deep Dive Analysis** - Comprehensive multi-year investment thesis (3,000-5,000 words)
-- **Quick Screen** - Fast financial screening for rapid evaluation (30-60 seconds)
+- **Enhanced Quick Screen** - 1-year business snapshot with INVESTIGATE/PASS recommendation (2-3 min, $0.75-$1.50)
+- **Deep Dive Analysis** - Comprehensive multi-year investment thesis (5-15 min, $2.50-$7)
+- **Sharia Compliance Screening** - AAOIFI-standard Islamic finance analysis (3-5 min, $1.50-$2.50)
 - **Configurable Depth** - Choose 1-10 years of historical analysis
 - **Economic Moat Detection** - Identifies and analyzes competitive advantages
 - **Management Evaluation** - Assesses CEO quality, capital allocation, and integrity
@@ -167,6 +170,9 @@ print(json.dumps(result, indent=2))
 - [Phase 6A](docs/phases/phase_6a/) - Web UI and enhancements
   - Phase 6A.1: Complete thesis fix and configurable years
   - Phase 6A.2: Cost tracking and Arabic translation
+- [Phase 6B](docs/phases/phase_6b/) - Advanced screening features
+  - Enhanced Quick Screen with INVESTIGATE/PASS recommendations
+  - Sharia Compliance screening with AAOIFI standards
 
 ---
 
@@ -235,7 +241,8 @@ basira-agent/
 ├── src/
 │   ├── agent/
 │   │   ├── buffett_agent.py       # Main agent implementation
-│   │   └── translator.py          # Arabic translation module
+│   │   ├── translator.py          # Arabic translation module
+│   │   └── sharia_screener.py     # Sharia compliance screening
 │   ├── tools/
 │   │   ├── sec_filing_tool.py     # SEC EDGAR integration
 │   │   ├── gurufocus_tool.py      # Financial data API

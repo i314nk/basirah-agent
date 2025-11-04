@@ -401,32 +401,160 @@ You don't have to swing at every pitch.
 
     def _get_quick_screen_prompt(self, ticker: str) -> str:
         """
-        Get the prompt for quick screening (abbreviated analysis).
+        Get the prompt for enhanced quick screening.
+
+        This generates a 1-year business snapshot with a clear recommendation
+        on whether the company deserves a full deep dive analysis.
 
         Args:
             ticker: Stock ticker
 
         Returns:
-            str: Prompt for agent
+            str: Enhanced prompt for agent
         """
-        return f"""I'd like you to do a quick screen on {ticker}.
+        return f"""I'd like you to do an ENHANCED QUICK SCREEN on {ticker}.
 
-Use GuruFocus to check:
-- ROIC (need >15%)
-- Debt levels (Debt/Equity < 1.0)
-- Financial strength score
+This is a rapid 1-year business snapshot to help me decide if this company
+deserves a full deep dive (spending 7+ minutes reading complete annual reports
+and $3-4 in analysis costs).
+
+**YOUR PROCESS:**
+
+**Phase 1: Get the Numbers (GuruFocus)**
+Use GuruFocus to check core metrics:
+- ROIC (need >15% for quality businesses)
+- Debt/Equity ratio (prefer <0.7)
+- Financial Strength Score
 - Profitability trends
+- Revenue growth
 
-Based on the numbers, make a quick decision:
-- If numbers look poor → **DECISION: AVOID**
-- If numbers look promising but need deep dive → **DECISION: WATCH**
-- If numbers look exceptional → **DECISION: BUY** (rare for quick screen)
+**Phase 2: Understand the Business (SEC Filing)**
+Read the most recent 10-K but ONLY these sections:
+- section="business" (understand what they do)
+- Don't read full 10-K yet - that's for deep dive
 
-Remember to include your structured decision in your final response:
-**DECISION: [BUY/WATCH/AVOID]**
-**CONVICTION: [HIGH/MODERATE/LOW]**
+Get clarity on:
+- What products/services do they sell?
+- Who are their customers?
+- What industry/market?
+- Basic business model
 
-This is just a quick screen based on quantitative metrics.
+**Phase 3: Quick Moat Check (Web Search if needed)**
+Look for obvious competitive advantages:
+- Brand power?
+- High switching costs?
+- Network effects?
+- Cost advantages?
+- Pricing power?
+
+**YOUR OUTPUT:**
+
+Provide a structured 1-year snapshot in this exact format:
+
+---
+
+# ⚡ WARREN'S QUICK SCREEN: {ticker}
+
+## 1. Business at a Glance (2-3 paragraphs)
+
+Explain what {ticker} does in plain English:
+- What products/services they sell
+- Who buys from them (customers)
+- How they make money (business model)
+- What industry/market they operate in
+- Basic market position
+
+Make this so clear that someone unfamiliar with the company can understand
+it in 30 seconds. Use your simple, folksy language.
+
+## 2. Financial Health Snapshot (Current Year)
+
+Present the key metrics clearly:
+
+**Core Metrics:**
+- Revenue: $XXB (±X% YoY)
+- Operating Margin: X%
+- Net Margin: X%
+- ROIC: X% (vs 15% hurdle)
+- Debt/Equity: X.X
+
+**Quick Assessment:**
+[2-3 sentences on financial strength - excellent/good/concerning/poor]
+
+## 3. Economic Moat (Quick Take)
+
+**Moat Assessment:** Strong / Moderate / Weak / None
+
+[2-3 paragraphs explaining:]
+- What competitive advantages (if any) are evident?
+- Any obvious pricing power?
+- High customer switching costs?
+- Brand strength?
+- Be honest - if no moat is visible, say so
+
+## 4. Red Flags 🚩 & Green Flags ✅
+
+**Green Flags (Positive Signs):**
+- [Flag 1 with brief explanation]
+- [Flag 2 with brief explanation]
+- [Flag 3 with brief explanation]
+
+**Red Flags (Concerns):**
+- [Flag 1 with brief explanation]
+- [Flag 2 with brief explanation]
+- [Flag 3 with brief explanation]
+
+Be specific. Use actual numbers and facts.
+
+## 5. My Deep Dive Recommendation
+
+[This is the KEY section - be decisive and clear]
+
+**RECOMMENDATION:** 🟢 INVESTIGATE or 🔴 PASS
+
+[3-4 paragraphs explaining your decision:]
+
+If **INVESTIGATE** (recommend deep dive):
+- Why this business has potential
+- What specific aspects deserve deeper investigation
+- What you'd look for in the full 10-K
+- Estimated value at first glance
+- Why it's worth spending $3-4 and 7+ minutes
+
+If **PASS** (skip deep dive):
+- What disqualifies this business
+- Why the numbers/business model don't work
+- What would have to change for you to reconsider
+- Why your time is better spent elsewhere
+- Be blunt but fair
+
+**Confidence Level:** HIGH / MODERATE / LOW
+
+[1-2 sentences on why you're confident or uncertain]
+
+---
+
+**DECISION: [INVESTIGATE / PASS]**
+**CONVICTION: [HIGH / MODERATE / LOW]**
+
+---
+
+**CRITICAL REQUIREMENTS:**
+
+1. **Be decisive** - Users need clear guidance on whether to spend $3-4 on deep dive
+2. **Be honest** - If ROIC is 8%, say it's below your 15% hurdle and explain why that matters
+3. **Be specific** - Use actual numbers, not vague statements
+4. **Be concise** - Target 800-1,000 words total (much shorter than deep dive's 3,500)
+5. **Be helpful** - Users should walk away with clear understanding of business + recommendation
+6. **Use your voice** - Sound like Warren Buffett explaining to a friend over coffee
+
+Remember: This quick screen costs $1-2 and takes 2-3 minutes. Its purpose is to
+help investors decide whether to invest $3-4 and 7+ minutes in a full deep dive.
+Be the filter that saves them from wasting time on weak businesses.
+
+Good businesses with bad prices → INVESTIGATE (might be opportunity)
+Bad businesses → PASS (no price makes a bad business good)
+Confusing businesses → PASS (circle of competence)
 """
 
     # ========================================================================

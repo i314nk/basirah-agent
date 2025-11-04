@@ -1,0 +1,1230 @@
+# BUILDER PROMPT: Phase 6B - Enhanced Quick Screen + Sharia Compliance
+
+**Project:** basīrah Warren Buffett AI Agent
+**Phase:** 6B - Advanced Screening Features
+**Priority:** HIGH (Strategic Features)
+**Estimated Time:** 4-5 hours
+
+---
+
+## OVERVIEW
+
+Phase 6B adds two powerful screening features that enhance basīrah's value proposition:
+
+1. **Enhanced Quick Screen** - 1-year business snapshot with Deep Dive recommendation
+2. **Sharia Compliance Screen** - Complete AAOIFI-standard Islamic finance screening
+
+Both features complement the existing Deep Dive analysis and position basīrah uniquely in the market.
+
+---
+
+## FEATURE 1: ENHANCED QUICK SCREEN ⚡
+
+### Current vs Enhanced
+
+**Current Quick Screen (Phase 6A):**
+```
+Run GuruFocus checks
+  ↓
+DECISION: AVOID/WATCH/BUY
+  ↓
+No context or reasoning
+```
+
+**Enhanced Quick Screen (Phase 6B):**
+```
+1-Year Business Snapshot
+  ├─ Business Overview (what they do)
+  ├─ Financial Health (2024 metrics)
+  ├─ Quick Moat Assessment
+  ├─ Red Flags & Green Flags
+  └─ Deep Dive Recommendation
+     ├─ 🟢 INVESTIGATE (worth $3-4 deep dive)
+     └─ 🔴 PASS (not worth the time/money)
+
+Output: ~800-1,000 words
+Cost: $0.75-$1.50
+Time: 2-3 minutes
+```
+
+### User Value Proposition
+
+**Problem Solved:**
+- Users don't know if they should spend $3-4 on deep dive
+- No context for why a company passed/failed initial screen
+- Wastes money on deep dives for obviously bad companies
+
+**Solution:**
+- Clear recommendation: "Worth investigating" or "Pass"
+- Business context (what they do, how they make money)
+- Quick assessment in Warren's voice
+- Saves time and money on weak candidates
+
+### Implementation
+
+#### Step 1: Update Quick Screen Prompt
+
+**File:** `src/agent/buffett_agent.py`
+
+**Find:** `_get_quick_screen_prompt()` method (around line 398)
+
+**Replace the entire method with:**
+
+```python
+def _get_quick_screen_prompt(self, ticker: str) -> str:
+    """
+    Get the prompt for enhanced quick screening.
+    
+    This generates a 1-year business snapshot with a clear recommendation
+    on whether the company deserves a full deep dive analysis.
+    
+    Args:
+        ticker: Stock ticker
+        
+    Returns:
+        str: Enhanced prompt for agent
+    """
+    return f"""I'd like you to do an ENHANCED QUICK SCREEN on {ticker}.
+
+This is a rapid 1-year business snapshot to help me decide if this company
+deserves a full deep dive (spending 7+ minutes reading complete annual reports
+and $3-4 in analysis costs).
+
+**YOUR PROCESS:**
+
+**Phase 1: Get the Numbers (GuruFocus)**
+Use GuruFocus to check core metrics:
+- ROIC (need >15% for quality businesses)
+- Debt/Equity ratio (prefer <0.7)
+- Financial Strength Score
+- Profitability trends
+- Revenue growth
+
+**Phase 2: Understand the Business (SEC Filing)**
+Read the most recent 10-K but ONLY these sections:
+- section="business" (understand what they do)
+- Don't read full 10-K yet - that's for deep dive
+
+Get clarity on:
+- What products/services do they sell?
+- Who are their customers?
+- What industry/market?
+- Basic business model
+
+**Phase 3: Quick Moat Check (Web Search if needed)**
+Look for obvious competitive advantages:
+- Brand power?
+- High switching costs?
+- Network effects?
+- Cost advantages?
+- Pricing power?
+
+**YOUR OUTPUT:**
+
+Provide a structured 1-year snapshot in this exact format:
+
+---
+
+# ⚡ WARREN'S QUICK SCREEN: {ticker}
+
+## 1. Business at a Glance (2-3 paragraphs)
+
+Explain what {ticker} does in plain English:
+- What products/services they sell
+- Who buys from them (customers)
+- How they make money (business model)
+- What industry/market they operate in
+- Basic market position
+
+Make this so clear that someone unfamiliar with the company can understand
+it in 30 seconds. Use your simple, folksy language.
+
+## 2. Financial Health Snapshot (Current Year)
+
+Present the key metrics clearly:
+
+**Core Metrics:**
+- Revenue: $XXB (±X% YoY)
+- Operating Margin: X%
+- Net Margin: X%
+- ROIC: X% (vs 15% hurdle)
+- Debt/Equity: X.X
+
+**Quick Assessment:**
+[2-3 sentences on financial strength - excellent/good/concerning/poor]
+
+## 3. Economic Moat (Quick Take)
+
+**Moat Assessment:** Strong / Moderate / Weak / None
+
+[2-3 paragraphs explaining:]
+- What competitive advantages (if any) are evident?
+- Any obvious pricing power?
+- High customer switching costs?
+- Brand strength?
+- Be honest - if no moat is visible, say so
+
+## 4. Red Flags 🚩 & Green Flags ✅
+
+**Green Flags (Positive Signs):**
+- [Flag 1 with brief explanation]
+- [Flag 2 with brief explanation]
+- [Flag 3 with brief explanation]
+
+**Red Flags (Concerns):**
+- [Flag 1 with brief explanation]
+- [Flag 2 with brief explanation]
+- [Flag 3 with brief explanation]
+
+Be specific. Use actual numbers and facts.
+
+## 5. My Deep Dive Recommendation
+
+[This is the KEY section - be decisive and clear]
+
+**RECOMMENDATION:** 🟢 INVESTIGATE or 🔴 PASS
+
+[3-4 paragraphs explaining your decision:]
+
+If **INVESTIGATE** (recommend deep dive):
+- Why this business has potential
+- What specific aspects deserve deeper investigation
+- What you'd look for in the full 10-K
+- Estimated value at first glance
+- Why it's worth spending $3-4 and 7+ minutes
+
+If **PASS** (skip deep dive):
+- What disqualifies this business
+- Why the numbers/business model don't work
+- What would have to change for you to reconsider
+- Why your time is better spent elsewhere
+- Be blunt but fair
+
+**Confidence Level:** HIGH / MODERATE / LOW
+
+[1-2 sentences on why you're confident or uncertain]
+
+---
+
+**DECISION: [INVESTIGATE / PASS]**
+**CONFIDENCE: [HIGH / MODERATE / LOW]**
+
+---
+
+**CRITICAL REQUIREMENTS:**
+
+1. **Be decisive** - Users need clear guidance on whether to spend $3-4 on deep dive
+2. **Be honest** - If ROIC is 8%, say it's below your 15% hurdle and explain why that matters
+3. **Be specific** - Use actual numbers, not vague statements
+4. **Be concise** - Target 800-1,000 words total (much shorter than deep dive's 3,500)
+5. **Be helpful** - Users should walk away with clear understanding of business + recommendation
+6. **Use your voice** - Sound like Warren Buffett explaining to a friend over coffee
+
+Remember: This quick screen costs $1-2 and takes 2-3 minutes. Its purpose is to
+help investors decide whether to invest $3-4 and 7+ minutes in a full deep dive.
+Be the filter that saves them from wasting time on weak businesses.
+
+Good businesses with bad prices → INVESTIGATE (might be opportunity)
+Bad businesses → PASS (no price makes a bad business good)
+Confusing businesses → PASS (circle of competence)
+"""
+```
+
+#### Step 2: Update Result Display
+
+**File:** `src/ui/components.py`
+
+**Add new function after `display_cost_information()` (around line 323):**
+
+```python
+def display_quick_screen_recommendation(result: Dict[str, Any]):
+    """
+    Display quick screen recommendation prominently.
+    
+    Args:
+        result: Analysis result with thesis
+    """
+    thesis = result.get('thesis', '')
+    
+    # Extract recommendation (look for 🟢 INVESTIGATE or 🔴 PASS)
+    if '🟢 INVESTIGATE' in thesis or 'INVESTIGATE' in thesis:
+        recommendation = 'INVESTIGATE'
+        emoji = '🟢'
+        color = 'green'
+        message = 'Deep Dive Recommended'
+    elif '🔴 PASS' in thesis or 'RECOMMENDATION:** 🔴 PASS' in thesis:
+        recommendation = 'PASS'
+        emoji = '🔴'
+        color = 'red'
+        message = 'Skip Deep Dive'
+    else:
+        recommendation = 'UNCLEAR'
+        emoji = '⚪'
+        color = 'gray'
+        message = 'Review Required'
+    
+    # Display prominent recommendation card
+    st.divider()
+    
+    if recommendation == 'INVESTIGATE':
+        st.success(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("""
+        **This company shows potential and deserves deeper investigation.**
+        
+        Consider running a **Deep Dive Analysis** to:
+        - Read complete 10-Ks across multiple years
+        - Assess management quality in detail
+        - Calculate precise intrinsic value
+        - Make final investment decision
+        """)
+        
+        # Add button for deep dive
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔍 Run Deep Dive Analysis", type="primary", use_container_width=True):
+                st.session_state['run_deep_dive'] = True
+                st.session_state['deep_dive_ticker'] = result.get('ticker')
+                st.rerun()
+    
+    elif recommendation == 'PASS':
+        st.error(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("""
+        **This company doesn't meet the quality criteria for further analysis.**
+        
+        Better to spend time finding truly exceptional businesses than trying
+        to make mediocre ones work. As Warren says: *"It's far better to buy 
+        a wonderful company at a fair price than a fair company at a wonderful price."*
+        """)
+    
+    else:
+        st.warning(f"### {emoji} Warren's Recommendation: {message}")
+        st.markdown("Review the analysis below for details.")
+```
+
+#### Step 3: Update UI Flow
+
+**File:** `src/ui/app.py`
+
+**Find:** Where results are displayed (around line 172)
+
+**Add after cost display:**
+
+```python
+# Display cost information
+display_cost_information(result)
+
+# If Quick Screen, show prominent recommendation
+if analysis_type == "Quick Screen":
+    display_quick_screen_recommendation(result)
+
+# Display thesis with translation option
+display_thesis_with_translation(result, translator)
+```
+
+**Add deep dive trigger (after main analysis section):**
+
+```python
+# Handle deep dive trigger from quick screen
+if st.session_state.get('run_deep_dive', False):
+    ticker = st.session_state.get('deep_dive_ticker', '')
+    if ticker:
+        st.info(f"🔍 Starting Deep Dive Analysis for {ticker}...")
+        
+        # Clear trigger
+        st.session_state['run_deep_dive'] = False
+        
+        # Run deep dive
+        with st.spinner(f"Performing deep dive analysis on {ticker}..."):
+            result = agent.analyze_company(
+                ticker=ticker,
+                deep_dive=True,
+                years_to_analyze=st.session_state.get('years_to_analyze', 3)
+            )
+            
+            st.session_state.last_result = result
+            st.rerun()
+```
+
+---
+
+## FEATURE 2: SHARIA COMPLIANCE SCREEN ☪️
+
+### What This Feature Does
+
+Analyzes companies for Islamic finance compliance according to AAOIFI standards:
+
+1. **Business Activity Screening** - Is the core business permissible?
+2. **Financial Ratio Screening** - Do leverage/interest levels meet thresholds?
+3. **Purification Calculation** - How much to donate if minor non-compliance?
+4. **Scholarly Context** - Explanation of rulings and differences
+
+### Output Example
+
+```markdown
+# SHARIA COMPLIANCE ANALYSIS - AAPL
+
+**Status:** ⚠️ DOUBTFUL (Requires Purification)
+**Purification Rate:** 2.3% of dividends
+**Standard:** AAOIFI Guidelines
+
+## Business Activity Review
+Core business (hardware): ✅ PERMISSIBLE
+Services segment: ⚠️ MIXED (music/entertainment)
+
+## Financial Ratios
+✅ Debt/Market Cap: 27% (< 30% threshold)
+✅ Cash/Market Cap: 6% (< 30% threshold)
+✅ AR/Market Cap: 2% (< 50% threshold)
+⚠️ Interest Income: 1.2% (< 5% threshold, but not zero)
+
+## Verdict
+DOUBTFUL - Suitable for moderate investors
+NOT suitable for strict interpretations
+```
+
+### Implementation
+
+#### Step 1: Create Sharia Screening Module
+
+**File:** Create new file `src/agent/sharia_screener.py`
+
+```python
+"""
+Sharia Compliance Screening Module
+
+Analyzes companies for Islamic finance compliance according to AAOIFI standards.
+"""
+
+import os
+import logging
+from typing import Dict, Any
+from datetime import datetime
+from dotenv import load_dotenv
+import anthropic
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+class ShariaScreener:
+    """
+    Analyzes companies for Sharia (Islamic law) compliance.
+    
+    Uses AAOIFI (Accounting and Auditing Organization for Islamic 
+    Financial Institutions) standards for screening.
+    """
+    
+    MODEL = "claude-sonnet-4-20250514"
+    MAX_TOKENS = 8000
+    
+    # AAOIFI Financial Ratio Thresholds
+    DEBT_THRESHOLD = 0.30  # Debt/Market Cap < 30%
+    CASH_THRESHOLD = 0.30  # (Cash + Interest Securities)/Market Cap < 30%
+    AR_THRESHOLD = 0.50    # Accounts Receivable/Market Cap < 50%
+    INTEREST_INCOME_THRESHOLD = 0.05  # Interest Income/Revenue < 5%
+    
+    # Prohibited Business Activities
+    PROHIBITED_ACTIVITIES = [
+        "alcohol production or distribution",
+        "gambling or casino operations",
+        "pork products",
+        "conventional banking (interest-based)",
+        "pornography or adult entertainment",
+        "tobacco",
+        "weapons or defense (per some scholars)",
+        "music or entertainment (strict interpretation)"
+    ]
+    
+    def __init__(self, api_key: str = None):
+        """
+        Initialize Sharia screener.
+        
+        Args:
+            api_key: Anthropic API key
+        """
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not self.api_key:
+            raise ValueError("ANTHROPIC_API_KEY not found")
+        
+        self.client = anthropic.Anthropic(api_key=self.api_key)
+        logger.info("ShariaScreener initialized")
+    
+    def screen_company(self, ticker: str) -> Dict[str, Any]:
+        """
+        Perform complete Sharia compliance screening.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            {
+                "ticker": str,
+                "status": "COMPLIANT" | "DOUBTFUL" | "NON-COMPLIANT",
+                "analysis": str,  # Full markdown analysis
+                "business_activity_status": str,
+                "financial_ratios_status": str,
+                "purification_rate": float,  # % of dividends to donate
+                "suitable_for": list,  # Types of investors
+                "metadata": dict
+            }
+        """
+        logger.info(f"Starting Sharia screening for {ticker}")
+        
+        prompt = self._build_sharia_screening_prompt(ticker)
+        
+        try:
+            # Track tokens
+            total_input_tokens = 0
+            total_output_tokens = 0
+            
+            response = self.client.messages.create(
+                model=self.MODEL,
+                max_tokens=self.MAX_TOKENS,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+            
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+            
+            # Extract analysis
+            analysis_text = ""
+            for block in response.content:
+                if block.type == "text":
+                    analysis_text += block.text
+            
+            # Parse status and purification rate from response
+            status = self._extract_status(analysis_text)
+            purification_rate = self._extract_purification_rate(analysis_text)
+            
+            # Calculate cost
+            input_cost = (total_input_tokens / 1000) * 0.01
+            output_cost = (total_output_tokens / 1000) * 0.30
+            total_cost = input_cost + output_cost
+            
+            logger.info(
+                f"Sharia screening complete for {ticker}: {status}, "
+                f"purification {purification_rate:.1f}%, cost ${total_cost:.2f}"
+            )
+            
+            return {
+                "ticker": ticker,
+                "status": status,
+                "analysis": analysis_text,
+                "purification_rate": purification_rate,
+                "metadata": {
+                    "analysis_date": datetime.now().isoformat(),
+                    "standard": "AAOIFI",
+                    "token_usage": {
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "input_cost": round(input_cost, 2),
+                        "output_cost": round(output_cost, 2),
+                        "total_cost": round(total_cost, 2)
+                    }
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Sharia screening failed for {ticker}: {e}")
+            return {
+                "ticker": ticker,
+                "status": "ERROR",
+                "analysis": f"Screening failed: {str(e)}",
+                "purification_rate": 0.0,
+                "metadata": {
+                    "error": str(e)
+                }
+            }
+    
+    def _build_sharia_screening_prompt(self, ticker: str) -> str:
+        """Build comprehensive Sharia screening prompt."""
+        
+        return f"""You are a Sharia compliance analyst specializing in Islamic finance.
+Analyze {ticker} for Sharia (Islamic law) compliance according to AAOIFI standards.
+
+**YOUR TOOLS:**
+- GuruFocus: Financial data and ratios
+- SEC Filing: Business description and revenue sources
+- Web Search: Industry information and business activities
+- Calculator: Financial ratio calculations
+
+**YOUR ANALYSIS PROCESS:**
+
+**PHASE 1: BUSINESS ACTIVITY SCREENING**
+
+Use SEC Filing tool to read the most recent 10-K (section="business"):
+- What is the company's primary business?
+- What are all revenue sources (with % breakdown if available)?
+- Are any activities from the prohibited list below?
+
+**Prohibited Business Activities (AAOIFI):**
+{chr(10).join(f"- {activity}" for activity in self.PROHIBITED_ACTIVITIES)}
+
+**Compliance Levels:**
+- ✅ **COMPLIANT:** 0% revenue from prohibited activities
+- ⚠️ **DOUBTFUL:** <5% revenue from prohibited activities (requires purification)
+- ❌ **NON-COMPLIANT:** ≥5% revenue from prohibited activities
+
+**PHASE 2: FINANCIAL RATIO SCREENING**
+
+Use GuruFocus and Calculator tools to check these ratios:
+
+**AAOIFI Financial Thresholds:**
+1. **Debt / Market Capitalization** < {self.DEBT_THRESHOLD * 100}%
+2. **(Cash + Interest-bearing Securities) / Market Cap** < {self.CASH_THRESHOLD * 100}%
+3. **Accounts Receivable / Market Cap** < {self.AR_THRESHOLD * 100}%
+4. **Interest Income / Total Revenue** < {self.INTEREST_INCOME_THRESHOLD * 100}%
+
+All four ratios must pass for compliance.
+
+**PHASE 3: PURIFICATION CALCULATION**
+
+If company has minor non-compliant income (<5%):
+- Calculate % of revenue from prohibited sources
+- Calculate % of interest income
+- Total = Purification Rate (what % of dividends to donate to charity)
+
+**YOUR OUTPUT:**
+
+Provide a comprehensive Sharia compliance analysis in this format:
+
+---
+
+# SHARIA COMPLIANCE ANALYSIS - {ticker}
+
+**Status:** [✅ COMPLIANT / ⚠️ DOUBTFUL / ❌ NON-COMPLIANT]
+**Purification Required:** [Yes/No] ([X.X]% if applicable)
+**Analysis Date:** {datetime.now().strftime('%B %d, %Y')}
+**Standard:** AAOIFI Guidelines
+
+---
+
+## 1. Business Activity Review
+
+**Primary Business:**
+[What does the company do? 2-3 sentences]
+
+**Revenue Breakdown (Most Recent Year):**
+- [Revenue source 1]: X% ($XXB)
+- [Revenue source 2]: X% ($XXB)
+- [Continue for major segments]
+
+**Sharia Compliance Assessment:**
+
+[For each revenue source, assess:]
+✅ **[Segment Name] (X%):** COMPLIANT
+   - [Brief explanation why permissible]
+
+OR
+
+⚠️ **[Segment Name] (X%):** DOUBTFUL
+   - [Brief explanation of concern]
+   - [Scholarly opinion if relevant]
+
+OR
+
+❌ **[Segment Name] (X%):** NON-COMPLIANT
+   - [Brief explanation why prohibited]
+
+**Business Activity Verdict:** [✅ Compliant / ⚠️ Substantially Compliant / ❌ Non-Compliant]
+[2-3 sentences explaining overall assessment]
+
+---
+
+## 2. Financial Ratios Screening
+
+[Use actual calculated values for the company]
+
+| Ratio | Value | AAOIFI Threshold | Status |
+|-------|-------|------------------|--------|
+| **Debt / Market Cap** | X.X% | < 30% | [✅/❌] |
+| **Cash / Market Cap** | X.X% | < 30% | [✅/❌] |
+| **AR / Market Cap** | X.X% | < 50% | [✅/❌] |
+| **Interest Income / Revenue** | X.X% | < 5% | [✅/❌] |
+
+**Financial Ratios Verdict:** [✅ All Pass / ❌ Some Fail]
+
+**Notes on Ratios:**
+[2-3 sentences explaining any concerns or notable observations]
+
+---
+
+## 3. Overall Sharia Compliance
+
+**FINAL STATUS: [✅ COMPLIANT / ⚠️ DOUBTFUL / ❌ NON-COMPLIANT]**
+
+[3-4 paragraphs explaining:]
+- Overall assessment combining business activity + financial ratios
+- Why this classification was assigned
+- Key concerns or positive factors
+- Scholarly opinions if relevant
+
+**Purification Requirement:**
+
+IF status is DOUBTFUL:
+**Purification Rate: X.X% of dividends**
+
+Breakdown:
+- Non-compliant business income: X.X%
+- Interest income: X.X%
+- **Total purification rate: X.X%**
+
+**Example:** For every $100 in dividends received, donate $X.XX to charity.
+
+IF status is COMPLIANT:
+**No purification required** - Business is fully compliant with AAOIFI standards.
+
+IF status is NON-COMPLIANT:
+**Not suitable for Sharia-compliant portfolios** - Purification does not apply as 
+non-compliant income exceeds acceptable thresholds.
+
+---
+
+## 4. Investment Suitability
+
+**Who This Is Suitable For:**
+
+[Based on status:]
+
+IF COMPLIANT:
+✅ All Muslim investors (strict and moderate)
+✅ Sharia-compliant funds
+✅ Conservative investors seeking zero non-compliant income
+
+IF DOUBTFUL:
+✅ Moderate Muslim investors (majority scholarly opinion)
+✅ Investors following AAOIFI standards
+⚠️ May not suit strict/conservative interpretations
+⚠️ Requires dividend purification
+
+IF NON-COMPLIANT:
+❌ Not suitable for Sharia-compliant portfolios
+❌ Exceeds AAOIFI thresholds
+❌ Alternative halal investments recommended
+
+**Alternative Considerations:**
+[Suggest 2-3 similar companies with better Sharia compliance if current is doubtful/non-compliant]
+
+---
+
+## 5. Scholarly References & Disclaimer
+
+**Standards Applied:**
+- AAOIFI Sharia Standard No. 21 (Financial Papers - Shares)
+- AAOIFI Sharia Standard No. 6 (Conversion of Conventional Bank)
+- Majority scholarly opinion from AAOIFI Sharia Board
+
+**Important Notes:**
+1. This analysis follows mainstream AAOIFI standards
+2. Some scholars may have stricter interpretations
+3. Purification rates are approximations based on public data
+4. Business activities may change - review annually
+
+**Disclaimer:**
+This is an educational analysis based on publicly available data and mainstream
+Islamic finance principles. It is NOT a fatwa (religious ruling). Individual 
+investors should consult qualified Islamic scholars for personalized guidance
+based on their specific circumstances and interpretation.
+
+---
+
+**STATUS: [{ticker} STATUS]**
+**PURIFICATION RATE: [X.X]%** (if applicable)
+
+---
+
+*Analysis generated by basīrah - Warren Buffett AI with Sharia Screening*
+*Duration: [time] | Cost: [cost]*
+
+---
+
+**CRITICAL REQUIREMENTS:**
+
+1. **Use actual data** - Calculate real ratios using GuruFocus/Calculator tools
+2. **Be specific** - Don't say "alcohol may be involved" - find out yes/no
+3. **Be balanced** - Present both strict and lenient scholarly views when relevant
+4. **Be educational** - Explain WHY something is compliant/non-compliant
+5. **Be accurate** - This affects people's religious obligations
+6. **Be respectful** - This is about faith, not just finance
+7. **Use your tools** - Don't guess at financials, calculate them
+
+Now perform the complete Sharia compliance screening for {ticker}.
+"""
+    
+    def _extract_status(self, text: str) -> str:
+        """Extract compliance status from analysis text."""
+        text_upper = text.upper()
+        
+        if '❌ NON-COMPLIANT' in text or 'STATUS: NON-COMPLIANT' in text_upper:
+            return "NON-COMPLIANT"
+        elif '⚠️ DOUBTFUL' in text or 'STATUS: DOUBTFUL' in text_upper:
+            return "DOUBTFUL"
+        elif '✅ COMPLIANT' in text or 'STATUS: COMPLIANT' in text_upper:
+            return "COMPLIANT"
+        else:
+            return "UNCLEAR"
+    
+    def _extract_purification_rate(self, text: str) -> float:
+        """Extract purification rate from analysis text."""
+        import re
+        
+        # Look for patterns like "PURIFICATION RATE: 2.3%"
+        patterns = [
+            r'PURIFICATION RATE:\s*(\d+\.?\d*)%',
+            r'purification rate:\s*(\d+\.?\d*)%',
+            r'Total purification rate:\s*(\d+\.?\d*)%'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    continue
+        
+        return 0.0
+
+
+__all__ = ["ShariaScreener"]
+```
+
+#### Step 2: Add Sharia Display Components
+
+**File:** `src/ui/components.py`
+
+**Add this function after `display_quick_screen_recommendation()`:**
+
+```python
+def display_sharia_screening_result(result: Dict[str, Any]):
+    """
+    Display Sharia compliance screening results.
+    
+    Args:
+        result: Sharia screening result dictionary
+    """
+    status = result.get('status', 'UNCLEAR')
+    purification_rate = result.get('purification_rate', 0.0)
+    analysis = result.get('analysis', '')
+    
+    st.divider()
+    st.subheader("☪️ Sharia Compliance Status")
+    
+    # Status card with appropriate color
+    if status == "COMPLIANT":
+        st.success("### ✅ COMPLIANT")
+        st.markdown("""
+        **This company meets AAOIFI standards for Sharia compliance.**
+        
+        - ✅ Permissible business activities
+        - ✅ Financial ratios within limits
+        - ✅ No purification required
+        - ✅ Suitable for all Muslim investors
+        """)
+    
+    elif status == "DOUBTFUL":
+        st.warning(f"### ⚠️ DOUBTFUL (Purification Required)")
+        st.markdown(f"""
+        **This company has minor non-compliant elements.**
+        
+        - ⚠️ Contains <5% non-compliant income
+        - ⚠️ Requires dividend purification: **{purification_rate:.1f}%**
+        - ✅ Suitable for moderate interpretations
+        - ❌ May not suit strict interpretations
+        
+        **Purification Example:**  
+        For every $100 in dividends: Donate ${purification_rate:.2f} to charity
+        """)
+    
+    elif status == "NON-COMPLIANT":
+        st.error("### ❌ NON-COMPLIANT")
+        st.markdown("""
+        **This company does not meet AAOIFI standards.**
+        
+        - ❌ Significant prohibited activities OR
+        - ❌ Financial ratios exceed thresholds
+        - ❌ Not suitable for Sharia portfolios
+        - 💡 Consider halal alternatives
+        """)
+    
+    else:
+        st.info("### ⚪ STATUS UNCLEAR")
+        st.markdown("Review the detailed analysis below.")
+    
+    # Display full analysis
+    st.divider()
+    st.markdown("### 📋 Detailed Analysis")
+    st.markdown(analysis)
+
+
+def display_analysis_type_badge(analysis_type: str):
+    """
+    Display badge showing which analysis type was run.
+    
+    Args:
+        analysis_type: "quick" | "deep_dive" | "sharia"
+    """
+    if analysis_type == "quick":
+        st.info("⚡ **Quick Screen** - 1-year snapshot + Deep Dive recommendation")
+    elif analysis_type == "deep_dive":
+        st.success("🔍 **Deep Dive** - Complete multi-year Warren Buffett analysis")
+    elif analysis_type == "sharia":
+        st.warning("☪️ **Sharia Compliance** - AAOIFI standard Islamic finance screening")
+```
+
+#### Step 3: Update Main UI
+
+**File:** `src/ui/app.py`
+
+**Find analysis type selection (around line 55) and update:**
+
+```python
+# Analysis type selection
+analysis_type = st.selectbox(
+    "📊 Analysis Type",
+    ["Quick Screen", "Deep Dive", "Sharia Compliance"],
+    help="""
+    - Quick Screen: Fast 1-year snapshot ($0.75-$1.50, 2-3 min)
+    - Deep Dive: Complete multi-year analysis ($2.50-$7, 5-15 min)
+    - Sharia Compliance: Islamic finance screening ($1.50-$2.50, 3-5 min)
+    """
+)
+```
+
+**Add screener initialization (after translator init, around line 90):**
+
+```python
+# Initialize Sharia screener (cache in session state)
+from src.agent.sharia_screener import ShariaScreener
+
+if 'sharia_screener' not in st.session_state:
+    try:
+        st.session_state['sharia_screener'] = ShariaScreener()
+    except Exception as e:
+        st.sidebar.warning(f"Sharia screening unavailable: {e}")
+        st.session_state['sharia_screener'] = None
+
+sharia_screener = st.session_state['sharia_screener']
+```
+
+**Update analysis button section (around line 220):**
+
+```python
+if st.button("🎯 Analyze Company", type="primary", use_container_width=True):
+    if not ticker:
+        st.error("Please enter a ticker symbol")
+    else:
+        st.divider()
+        
+        # Determine analysis type
+        is_deep_dive = (analysis_type == "Deep Dive")
+        is_sharia = (analysis_type == "Sharia Compliance")
+        is_quick = (analysis_type == "Quick Screen")
+        
+        if is_sharia:
+            # Sharia Compliance Screening
+            st.markdown(f"### ☪️ Analyzing {ticker} for Sharia Compliance...")
+            
+            with st.spinner("Performing Sharia compliance screening..."):
+                start_time = datetime.now()
+                
+                result = sharia_screener.screen_company(ticker)
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                result['metadata']['analysis_duration_seconds'] = duration
+                
+                # Store result
+                st.session_state.last_result = result
+                st.session_state.last_analysis_type = 'sharia'
+                
+                # Track cost
+                if 'token_usage' in result.get('metadata', {}):
+                    cost = result['metadata']['token_usage']['total_cost']
+                    if 'session_costs' not in st.session_state:
+                        st.session_state['session_costs'] = []
+                    st.session_state['session_costs'].append(cost)
+        
+        else:
+            # Regular or Quick Screen analysis
+            st.markdown(f"### {'🔍' if is_deep_dive else '⚡'} Analyzing {ticker}...")
+            
+            with st.spinner(f"{'Performing deep dive analysis' if is_deep_dive else 'Performing quick screen'}..."):
+                start_time = datetime.now()
+                
+                result = agent.analyze_company(
+                    ticker=ticker,
+                    deep_dive=is_deep_dive,
+                    years_to_analyze=years_to_analyze if is_deep_dive else 1
+                )
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                result['metadata']['analysis_duration_seconds'] = duration
+                
+                # Store result
+                st.session_state.last_result = result
+                st.session_state.last_analysis_type = 'deep_dive' if is_deep_dive else 'quick'
+                
+                # Track cost
+                if 'token_usage' in result.get('metadata', {}):
+                    cost = result['metadata']['token_usage']['total_cost']
+                    if 'session_costs' not in st.session_state:
+                        st.session_state['session_costs'] = []
+                    st.session_state['session_costs'].append(cost)
+        
+        st.rerun()
+```
+
+**Update results display section (around line 260):**
+
+```python
+# Display results if available
+if st.session_state.get('last_result'):
+    result = st.session_state.last_result
+    analysis_type = st.session_state.get('last_analysis_type', 'quick')
+    
+    st.divider()
+    st.success("✅ Analysis Complete!")
+    
+    # Show analysis type
+    from src.ui.components import display_analysis_type_badge
+    display_analysis_type_badge(analysis_type)
+    
+    # Display cost
+    display_cost_information(result)
+    
+    if analysis_type == 'sharia':
+        # Sharia compliance results
+        display_sharia_screening_result(result)
+    
+    else:
+        # Investment analysis results
+        if analysis_type == 'quick':
+            display_quick_screen_recommendation(result)
+        
+        # Key metrics (for investment analyses only)
+        render_results(result)
+        
+        # Thesis with translation
+        display_thesis_with_translation(result, translator)
+```
+
+---
+
+## TESTING PROCEDURES
+
+### Test Feature 1: Enhanced Quick Screen
+
+**Test Case 1: Quality Company (Should Recommend INVESTIGATE)**
+
+```bash
+1. Select "Quick Screen"
+2. Enter ticker: AAPL
+3. Click "Analyze Company"
+4. Wait 2-3 minutes
+
+Expected Output:
+- ✅ Business overview explaining Apple's products
+- ✅ Financial metrics showing strong ROIC (>40%)
+- ✅ Moat assessment (brand, ecosystem)
+- ✅ Green flags > Red flags
+- ✅ 🟢 INVESTIGATE recommendation
+- ✅ Button to "Run Deep Dive Analysis"
+- ✅ Cost: $0.75-$1.50
+```
+
+**Test Case 2: Poor Company (Should Recommend PASS)**
+
+```bash
+1. Select "Quick Screen"
+2. Enter ticker: F (Ford)
+3. Click "Analyze Company"
+
+Expected Output:
+- ✅ Business overview explaining auto manufacturing
+- ✅ Financial metrics showing low ROIC (<10%)
+- ✅ Moat assessment (weak/none)
+- ✅ Red flags > Green flags
+- ✅ 🔴 PASS recommendation
+- ✅ Clear explanation why not worth deep dive
+```
+
+### Test Feature 2: Sharia Compliance Screen
+
+**Test Case 1: Compliant Company**
+
+```bash
+1. Select "Sharia Compliance"
+2. Enter ticker: MSFT (Microsoft)
+3. Click "Analyze Company"
+4. Wait 3-5 minutes
+
+Expected Output:
+- ✅ Business activity review (software - permissible)
+- ✅ Financial ratios table (all passing)
+- ✅ ✅ COMPLIANT status
+- ✅ No purification required
+- ✅ Suitable for all Muslim investors
+- ✅ Cost: $1.50-$2.50
+```
+
+**Test Case 2: Doubtful Company**
+
+```bash
+1. Select "Sharia Compliance"
+2. Enter ticker: AAPL (Apple)
+3. Click "Analyze Company"
+
+Expected Output:
+- ✅ Business review showing music/entertainment concerns
+- ✅ Interest income noted
+- ✅ ⚠️ DOUBTFUL status
+- ✅ Purification rate calculated (1-3%)
+- ✅ Explanation of purification requirement
+```
+
+**Test Case 3: Non-Compliant Company**
+
+```bash
+1. Select "Sharia Compliance"
+2. Enter ticker: JPM (JPMorgan Chase - bank)
+3. Click "Analyze Company"
+
+Expected Output:
+- ✅ Business review identifying conventional banking
+- ✅ ❌ NON-COMPLIANT status
+- ✅ Clear explanation why prohibited
+- ✅ Not suitable for Sharia portfolios
+```
+
+### Integration Testing
+
+**Test Case: Full User Journey**
+
+```bash
+1. Quick Screen AAPL → 🟢 INVESTIGATE
+2. Click "Run Deep Dive" button
+3. Deep Dive completes → BUY decision
+4. Run Sharia Screen separately → ⚠️ DOUBTFUL
+5. Check session costs accumulated correctly
+6. Verify all three analyses displayed properly
+```
+
+---
+
+## SUCCESS CRITERIA
+
+### Feature 1: Enhanced Quick Screen
+- [ ] Output is 800-1,000 words (not 3,500 like deep dive)
+- [ ] Includes business overview, financials, moat, flags
+- [ ] Clear INVESTIGATE or PASS recommendation
+- [ ] "Run Deep Dive" button appears for INVESTIGATE
+- [ ] Warren's voice maintained
+- [ ] Cost: $0.75-$1.50
+- [ ] Time: 2-3 minutes
+
+### Feature 2: Sharia Compliance
+- [ ] Business activities reviewed from 10-K
+- [ ] Financial ratios calculated accurately
+- [ ] Status clearly displayed (COMPLIANT/DOUBTFUL/NON-COMPLIANT)
+- [ ] Purification rate calculated when applicable
+- [ ] Educational explanations provided
+- [ ] Scholarly references included
+- [ ] Respectful tone throughout
+- [ ] Cost: $1.50-$2.50
+- [ ] Time: 3-5 minutes
+
+### Integration
+- [ ] All three analysis types work correctly
+- [ ] Can switch between analysis types
+- [ ] Session costs track all three types
+- [ ] Export functions work for all types
+- [ ] No regressions in existing features
+
+---
+
+## FILES SUMMARY
+
+### Files to Create (1)
+1. `src/agent/sharia_screener.py` - Complete Sharia screening module (~300 lines)
+
+### Files to Modify (3)
+1. `src/agent/buffett_agent.py`
+   - Replace `_get_quick_screen_prompt()` method (~150 lines)
+
+2. `src/ui/components.py`
+   - Add `display_quick_screen_recommendation()` (~60 lines)
+   - Add `display_sharia_screening_result()` (~80 lines)
+   - Add `display_analysis_type_badge()` (~15 lines)
+
+3. `src/ui/app.py`
+   - Update analysis type selector (~10 lines)
+   - Add sharia screener initialization (~10 lines)
+   - Update analysis button logic (~50 lines)
+   - Update results display (~30 lines)
+
+**Total Changes:** ~700 lines added/modified
+
+---
+
+## ESTIMATED TIMELINE
+
+| Task | Time |
+|------|------|
+| **Feature 1: Enhanced Quick Screen** | |
+| - Update prompt in buffett_agent.py | 30 min |
+| - Add recommendation display component | 20 min |
+| - Update UI flow | 15 min |
+| - Test with 3 companies | 15 min |
+| **Feature 2: Sharia Compliance** | |
+| - Create sharia_screener.py | 60 min |
+| - Add display components | 30 min |
+| - Update UI integration | 30 min |
+| - Test with 3 companies | 20 min |
+| **Testing & Polish** | 30 min |
+| **Documentation** | 20 min |
+| **Total** | **~4 hours** |
+
+---
+
+## DEPLOYMENT CHECKLIST
+
+- [ ] Enhanced quick screen prompt implemented
+- [ ] Quick screen recommendation display working
+- [ ] Deep dive trigger button functional
+- [ ] Sharia screener module created
+- [ ] Sharia screening working end-to-end
+- [ ] All three analysis types selectable
+- [ ] Session costs tracking all types
+- [ ] Tested with quality company (AAPL)
+- [ ] Tested with poor company (F)
+- [ ] Tested with compliant company (MSFT)
+- [ ] Tested with non-compliant company (JPM)
+- [ ] Export functions updated
+- [ ] Documentation complete
+
+---
+
+## CONCLUSION
+
+Phase 6B adds two strategic features that position basīrah uniquely:
+
+1. **Enhanced Quick Screen** - Helps users make smart decisions about deep dives
+2. **Sharia Compliance** - Opens Middle East market with unique value proposition
+
+**Combined Value:**
+- Efficient funnel: Quick Screen → Deep Dive
+- Broader market: Value investors + Muslim investors
+- Unique positioning: Warren Buffett + Islamic finance
+- Complete offering: Quality screening + values alignment
+
+**Ready for implementation!** 🚀
+
+---
+
+*Phase 6B: Enhanced Quick Screen + Sharia Compliance*
+*Estimated: 4 hours | High Strategic Value*
+*Status: Ready for Implementation*

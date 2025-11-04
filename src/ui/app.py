@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 
 from src.agent.buffett_agent import WarrenBuffettAgent
 from src.agent.translator import ThesisTranslator
+from src.agent.sharia_screener import ShariaScreener
 from src.ui.components import (
     render_header,
     render_ticker_input,
@@ -27,6 +28,9 @@ from src.ui.components import (
     render_footer,
     render_sidebar_info,
     display_cost_information,
+    display_quick_screen_recommendation,
+    display_sharia_screening_result,
+    display_analysis_type_badge,
     display_thesis_with_translation
 )
 from src.ui.utils import (
@@ -85,6 +89,16 @@ def main():
         st.session_state['translator'] = ThesisTranslator()
 
     translator = st.session_state['translator']
+
+    # Initialize Sharia screener (cache in session state)
+    if 'sharia_screener' not in st.session_state:
+        try:
+            st.session_state['sharia_screener'] = ShariaScreener()
+        except Exception as e:
+            st.sidebar.warning(f"Sharia screening unavailable: {e}")
+            st.session_state['sharia_screener'] = None
+
+    sharia_screener = st.session_state['sharia_screener']
 
     # Sidebar info
     render_sidebar_info()
@@ -155,7 +169,17 @@ def main():
         ticker = render_ticker_input()
 
         # Analysis type selector
-        deep_dive = render_analysis_type_selector()
+        analysis_type = st.selectbox(
+            "📊 Analysis Type",
+            ["Quick Screen", "Deep Dive", "Sharia Compliance"],
+            help="""
+            - **Quick Screen**: Fast 1-year snapshot with Deep Dive recommendation ($0.75-$1.50, 2-3 min)
+            - **Deep Dive**: Complete multi-year Warren Buffett analysis ($2.50-$7, 5-15 min)
+            - **Sharia Compliance**: AAOIFI standard Islamic finance screening ($1.50-$2.50, 3-5 min)
+            """
+        )
+
+        deep_dive = (analysis_type == "Deep Dive")
 
     with col2:
         # Expected analysis info
@@ -165,7 +189,7 @@ def main():
     st.divider()
 
     # Analyze button
-    if st.button("🔍 Analyze Company", type="primary", use_container_width=True):
+    if st.button("🎯 Analyze Company", type="primary", use_container_width=True):
         if not ticker:
             st.error("⚠️ Please enter a stock ticker symbol")
         elif not validate_ticker(ticker):
@@ -174,23 +198,88 @@ def main():
                 "Please enter a valid US stock ticker (1-5 uppercase letters, e.g., AAPL, MSFT, KO)"
             )
         else:
-            # Run analysis with configured years
-            run_analysis(ticker, deep_dive, years_to_analyze)
+            # Handle different analysis types
+            if analysis_type == "Sharia Compliance":
+                # Sharia compliance screening
+                if not sharia_screener:
+                    st.error("⚠️ Sharia screening is not available. Please check API configuration.")
+                else:
+                    st.divider()
+                    st.markdown(f"### ☪️ Analyzing {ticker} for Sharia Compliance...")
+
+                    with st.spinner("Performing Sharia compliance screening..."):
+                        start_time = time.time()
+
+                        result = sharia_screener.screen_company(ticker)
+
+                        duration = time.time() - start_time
+                        result['metadata']['analysis_duration_seconds'] = duration
+
+                        # Store result
+                        st.session_state['last_result'] = result
+                        st.session_state['last_analysis_type'] = 'sharia'
+
+                        # Track cost
+                        if 'token_usage' in result.get('metadata', {}):
+                            cost = result['metadata']['token_usage']['total_cost']
+                            if 'session_costs' not in st.session_state:
+                                st.session_state['session_costs'] = []
+                            st.session_state['session_costs'].append(cost)
+
+                    st.rerun()
+            else:
+                # Regular or Quick Screen analysis
+                run_analysis(ticker, deep_dive, years_to_analyze)
 
     # Show last result if available
     if 'last_result' in st.session_state and st.session_state['last_result'] is not None:
         st.divider()
-        st.markdown("## 📊 Latest Analysis")
         result = st.session_state['last_result']
+        last_analysis_type = st.session_state.get('last_analysis_type', 'quick')
 
-        # Render basic results (without thesis)
-        render_results(result)
+        st.markdown("## 📊 Latest Analysis")
 
-        # Display cost information
+        # Show analysis type badge
+        display_analysis_type_badge(last_analysis_type)
+
+        # Display cost
         display_cost_information(result)
 
-        # Display thesis with translation option
-        display_thesis_with_translation(result, translator)
+        if last_analysis_type == 'sharia':
+            # Sharia compliance results
+            display_sharia_screening_result(result)
+
+        else:
+            # Investment analysis results
+            # Check if this was a quick screen
+            is_quick_screen = False
+            metadata = result.get('metadata', {})
+            if 'deep_dive' in metadata and not metadata['deep_dive']:
+                is_quick_screen = True
+            elif metadata.get('years_analyzed') == 1 and 'context_management' not in metadata:
+                is_quick_screen = True
+
+            # Render basic results (without thesis)
+            render_results(result)
+
+            # If Quick Screen, show prominent recommendation
+            if is_quick_screen:
+                display_quick_screen_recommendation(result)
+
+            # Display thesis with translation option
+            display_thesis_with_translation(result, translator)
+
+    # Handle deep dive trigger from quick screen
+    if st.session_state.get('run_deep_dive', False):
+        ticker = st.session_state.get('deep_dive_ticker', '')
+        if ticker:
+            st.info(f"🔍 Starting Deep Dive Analysis for {ticker}...")
+
+            # Clear trigger
+            st.session_state['run_deep_dive'] = False
+
+            # Run deep dive
+            run_analysis(ticker, deep_dive=True, years_to_analyze=years_to_analyze)
 
     # Footer
     render_footer()
@@ -286,6 +375,7 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         # Store result in session state
         # (Results will be displayed automatically by main() after rerun)
         st.session_state['last_result'] = result
+        st.session_state['last_analysis_type'] = 'deep_dive' if deep_dive else 'quick'
 
     except Exception as e:
         # Clear progress indicators
