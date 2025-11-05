@@ -19,6 +19,7 @@ sys.path.insert(0, str(project_root))
 from src.agent.buffett_agent import WarrenBuffettAgent
 from src.agent.translator import ThesisTranslator
 from src.agent.sharia_screener import ShariaScreener
+from src.storage import AnalysisStorage
 from src.ui.components import (
     render_header,
     render_ticker_input,
@@ -98,7 +99,16 @@ def main():
             st.sidebar.warning(f"Sharia screening unavailable: {e}")
             st.session_state['sharia_screener'] = None
 
+    # Initialize Analysis Storage (cache in session state)
+    if 'analysis_storage' not in st.session_state:
+        try:
+            st.session_state['analysis_storage'] = AnalysisStorage()
+        except Exception as e:
+            st.sidebar.warning(f"Analysis history unavailable: {e}")
+            st.session_state['analysis_storage'] = None
+
     sharia_screener = st.session_state['sharia_screener']
+    storage = st.session_state['analysis_storage']
 
     # Sidebar info
     render_sidebar_info()
@@ -225,6 +235,15 @@ def main():
                             if 'session_costs' not in st.session_state:
                                 st.session_state['session_costs'] = []
                             st.session_state['session_costs'].append(cost)
+
+                        # Auto-save to history
+                        if storage:
+                            try:
+                                save_result = storage.save_analysis(result)
+                                if save_result['success']:
+                                    st.sidebar.success(f"Saved to history: {save_result['analysis_id']}")
+                            except Exception as e:
+                                st.sidebar.warning(f"Failed to save to history: {e}")
 
                     st.rerun()
             else:
@@ -376,6 +395,16 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         # (Results will be displayed automatically by main() after rerun)
         st.session_state['last_result'] = result
         st.session_state['last_analysis_type'] = 'deep_dive' if deep_dive else 'quick'
+
+        # Auto-save to history
+        storage = st.session_state.get('analysis_storage')
+        if storage:
+            try:
+                save_result = storage.save_analysis(result)
+                if save_result['success']:
+                    st.sidebar.success(f"Saved to history: {save_result['analysis_id']}")
+            except Exception as e:
+                st.sidebar.warning(f"Failed to save to history: {e}")
 
     except Exception as e:
         # Clear progress indicators

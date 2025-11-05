@@ -40,3 +40,6 @@ NUL
 
 # Claude Code
 .claude/
+
+# Analysis data
+basirah_analyses/

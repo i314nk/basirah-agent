@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: basirah_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: basirah
+      POSTGRES_USER: basirah_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-basirah_secure_password_2025}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basirah_user -d basirah"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

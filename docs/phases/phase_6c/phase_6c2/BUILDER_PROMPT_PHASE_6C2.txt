@@ -1,0 +1,1320 @@
+# BUILDER PROMPT: Phase 6C.2 - Automated Batch Screening Protocol
+
+**Project:** basīrah Warren Buffett AI Agent
+**Phase:** 6C.2 - Batch Processing & Automated Screening
+**Priority:** HIGH (Killer Feature)
+**Estimated Time:** 6-8 hours
+
+---
+
+## OVERVIEW
+
+Phase 6C.2 implements automated batch screening that can analyze hundreds of companies in a single run, following a configurable protocol that filters companies through multiple stages. This transforms basīrah from a single-company analysis tool into a portfolio-building engine.
+
+**Key Features:**
+1. **CSV Upload** - Simple ticker list input
+2. **Protocol Engine** - Configurable multi-stage screening
+3. **Progress Dashboard** - Real-time status updates
+4. **Stop/Resume** - Pause and continue batch runs
+5. **Cost Management** - Estimation and budget controls
+6. **Summary Reports** - Detailed results breakdown
+7. **Database Integration** - All analyses auto-saved
+
+---
+
+## ARCHITECTURE
+
+```
+Batch Processing Flow
+
+CSV Upload (tickers.csv)
+    ↓
+Protocol Selection
+├─ Halal Value: Sharia → Quick → Deep
+├─ Value Only: Quick → Deep
+├─ Sharia Only: Sharia screening
+└─ Custom: Configure your own
+    ↓
+Batch Processor
+├─ Stage 1: Screen all companies
+├─ Stage 2: Filter & screen survivors
+├─ Stage 3: Deep dive finalists
+├─ Progress tracking (real-time)
+└─ Auto-save to database
+    ↓
+Summary Report
+├─ Funnel visualization
+├─ Top recommendations
+├─ Cost breakdown
+└─ Export options
+```
+
+---
+
+## CSV FORMAT
+
+### Input Format
+
+**Simple ticker-only format:**
+
+```csv
+ticker
+AAPL
+MSFT
+GOOG
+JPM
+F
+COST
+V
+MA
+```
+
+**Requirements:**
+- Column header: `ticker`
+- One ticker per row
+- No additional columns needed
+- Company names looked up automatically
+- Case insensitive (AAPL = aapl)
+
+**Validation:**
+- Valid ticker format (1-5 characters)
+- Duplicate detection and removal
+- Invalid ticker warnings
+
+---
+
+## PROTOCOL SYSTEM
+
+### Protocol Definition
+
+**File:** Create new file `src/batch/protocols.py`
+
+```python
+"""
+Batch screening protocols for basīrah.
+
+A protocol defines a multi-stage screening process where companies
+progress through stages and are filtered at each step.
+"""
+
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
+from enum import Enum
+
+
+class AnalysisType(Enum):
+    """Types of analysis that can be performed."""
+    SHARIA = "sharia"
+    QUICK = "quick"
+    DEEP_DIVE = "deep_dive"
+
+
+class Decision(Enum):
+    """Possible decisions from analyses."""
+    # Sharia decisions
+    COMPLIANT = "compliant"
+    DOUBTFUL = "doubtful"
+    NON_COMPLIANT = "non_compliant"
+    
+    # Quick screen decisions
+    INVESTIGATE = "investigate"
+    PASS = "pass"
+    
+    # Deep dive decisions
+    BUY = "buy"
+    WATCH = "watch"
+    AVOID = "avoid"
+
+
+@dataclass
+class ProtocolStage:
+    """Single stage in a screening protocol."""
+    
+    name: str
+    analysis_type: AnalysisType
+    pass_decisions: List[Decision]  # Decisions that allow progression
+    fail_decisions: List[Decision]  # Decisions that stop progression
+    years_to_analyze: Optional[int] = None  # For deep dive
+    description: str = ""
+    
+    def should_progress(self, decision: str) -> bool:
+        """
+        Check if a decision allows progression to next stage.
+        
+        Args:
+            decision: Decision string from analysis
+            
+        Returns:
+            True if should continue to next stage
+        """
+        decision_lower = decision.lower()
+        
+        # Check if in pass list
+        for pass_dec in self.pass_decisions:
+            if pass_dec.value in decision_lower:
+                return True
+        
+        return False
+
+
+@dataclass
+class BatchProtocol:
+    """Complete batch screening protocol."""
+    
+    id: str
+    name: str
+    description: str
+    stages: List[ProtocolStage]
+    
+    def get_stage(self, stage_index: int) -> Optional[ProtocolStage]:
+        """Get stage by index."""
+        if 0 <= stage_index < len(self.stages):
+            return self.stages[stage_index]
+        return None
+    
+    def total_stages(self) -> int:
+        """Get total number of stages."""
+        return len(self.stages)
+    
+    def estimate_cost(self, num_companies: int) -> Dict[str, Any]:
+        """
+        Estimate cost for running protocol on N companies.
+        
+        Assumes best-case scenario where companies progress through all stages.
+        Actual cost will likely be lower due to filtering.
+        
+        Args:
+            num_companies: Number of companies to screen
+            
+        Returns:
+            Cost estimate dictionary
+        """
+        # Cost per analysis type (average)
+        cost_map = {
+            AnalysisType.SHARIA: 2.0,
+            AnalysisType.QUICK: 1.0,
+            AnalysisType.DEEP_DIVE: 4.0  # 3-year average
+        }
+        
+        # Time per analysis type (minutes)
+        time_map = {
+            AnalysisType.SHARIA: 4,
+            AnalysisType.QUICK: 2,
+            AnalysisType.DEEP_DIVE: 8
+        }
+        
+        total_cost = 0
+        total_time = 0
+        stage_costs = []
+        
+        # Assume progressive filtering: 100% → 70% → 50%
+        filter_rates = [1.0, 0.7, 0.5]
+        
+        for i, stage in enumerate(self.stages):
+            filter_rate = filter_rates[min(i, len(filter_rates) - 1)]
+            stage_companies = int(num_companies * filter_rate)
+            
+            if stage.analysis_type == AnalysisType.DEEP_DIVE and stage.years_to_analyze:
+                # Adjust cost for years
+                cost_per = cost_map[stage.analysis_type]
+                if stage.years_to_analyze >= 10:
+                    cost_per *= 1.5
+                elif stage.years_to_analyze >= 7:
+                    cost_per *= 1.3
+            else:
+                cost_per = cost_map.get(stage.analysis_type, 2.0)
+            
+            time_per = time_map.get(stage.analysis_type, 5)
+            
+            stage_cost = stage_companies * cost_per
+            stage_time = stage_companies * time_per
+            
+            total_cost += stage_cost
+            total_time += stage_time
+            
+            stage_costs.append({
+                "stage_name": stage.name,
+                "companies": stage_companies,
+                "cost": round(stage_cost, 2),
+                "time_minutes": stage_time
+            })
+        
+        return {
+            "total_companies": num_companies,
+            "total_cost_min": round(total_cost * 0.5, 2),  # Best case (heavy filtering)
+            "total_cost_max": round(total_cost, 2),  # Worst case (light filtering)
+            "total_time_minutes": total_time,
+            "total_time_hours": round(total_time / 60, 1),
+            "stage_breakdown": stage_costs
+        }
+
+
+# Predefined Protocols
+
+HALAL_VALUE_PROTOCOL = BatchProtocol(
+    id="halal_value",
+    name="Halal Value Investing",
+    description="Complete screening: Sharia compliance → Business quality → Detailed analysis",
+    stages=[
+        ProtocolStage(
+            name="Sharia Compliance Screen",
+            analysis_type=AnalysisType.SHARIA,
+            pass_decisions=[Decision.COMPLIANT, Decision.DOUBTFUL],
+            fail_decisions=[Decision.NON_COMPLIANT],
+            description="Filter for Sharia-compliant companies"
+        ),
+        ProtocolStage(
+            name="Quick Screen",
+            analysis_type=AnalysisType.QUICK,
+            pass_decisions=[Decision.INVESTIGATE],
+            fail_decisions=[Decision.PASS],
+            description="Identify companies worth deep analysis"
+        ),
+        ProtocolStage(
+            name="Deep Dive Analysis",
+            analysis_type=AnalysisType.DEEP_DIVE,
+            pass_decisions=[Decision.BUY, Decision.WATCH, Decision.AVOID],
+            fail_decisions=[],
+            years_to_analyze=10,
+            description="Complete Warren Buffett analysis (10 years)"
+        )
+    ]
+)
+
+VALUE_ONLY_PROTOCOL = BatchProtocol(
+    id="value_only",
+    name="Value Investing Only",
+    description="Skip Sharia screening, focus on business quality",
+    stages=[
+        ProtocolStage(
+            name="Quick Screen",
+            analysis_type=AnalysisType.QUICK,
+            pass_decisions=[Decision.INVESTIGATE],
+            fail_decisions=[Decision.PASS],
+            description="Filter for quality businesses"
+        ),
+        ProtocolStage(
+            name="Deep Dive Analysis",
+            analysis_type=AnalysisType.DEEP_DIVE,
+            pass_decisions=[Decision.BUY, Decision.WATCH, Decision.AVOID],
+            fail_decisions=[],
+            years_to_analyze=5,
+            description="Complete Warren Buffett analysis (5 years)"
+        )
+    ]
+)
+
+SHARIA_ONLY_PROTOCOL = BatchProtocol(
+    id="sharia_only",
+    name="Sharia Screening Only",
+    description="Check Islamic compliance for large universe of companies",
+    stages=[
+        ProtocolStage(
+            name="Sharia Compliance Screen",
+            analysis_type=AnalysisType.SHARIA,
+            pass_decisions=[Decision.COMPLIANT, Decision.DOUBTFUL, Decision.NON_COMPLIANT],
+            fail_decisions=[],
+            description="Check Sharia compliance status"
+        )
+    ]
+)
+
+QUICK_FILTER_PROTOCOL = BatchProtocol(
+    id="quick_filter",
+    name="Quick Filter Only",
+    description="Fast screening to build watchlist",
+    stages=[
+        ProtocolStage(
+            name="Quick Screen",
+            analysis_type=AnalysisType.QUICK,
+            pass_decisions=[Decision.INVESTIGATE, Decision.PASS],
+            fail_decisions=[],
+            description="1-year business snapshot"
+        )
+    ]
+)
+
+# Protocol registry
+PROTOCOLS: Dict[str, BatchProtocol] = {
+    "halal_value": HALAL_VALUE_PROTOCOL,
+    "value_only": VALUE_ONLY_PROTOCOL,
+    "sharia_only": SHARIA_ONLY_PROTOCOL,
+    "quick_filter": QUICK_FILTER_PROTOCOL
+}
+
+
+def get_protocol(protocol_id: str) -> Optional[BatchProtocol]:
+    """Get protocol by ID."""
+    return PROTOCOLS.get(protocol_id)
+
+
+def list_protocols() -> List[BatchProtocol]:
+    """Get all available protocols."""
+    return list(PROTOCOLS.values())
+
+
+__all__ = [
+    "AnalysisType",
+    "Decision",
+    "ProtocolStage",
+    "BatchProtocol",
+    "PROTOCOLS",
+    "get_protocol",
+    "list_protocols"
+]
+```
+
+---
+
+## BATCH PROCESSOR
+
+### File: Batch Processing Engine
+
+**File:** Create new file `src/batch/batch_processor.py`
+
+```python
+"""
+Batch processing engine for basīrah.
+
+Handles automated screening of multiple companies following a protocol.
+"""
+
+import logging
+import time
+from typing import Dict, List, Any, Optional, Callable
+from datetime import datetime
+from pathlib import Path
+import csv
+
+from src.batch.protocols import BatchProtocol, AnalysisType
+from src.agent.buffett_agent import BuffettAgent
+from src.agent.sharia_screener import ShariaScreener
+from src.storage.analysis_storage import AnalysisStorage
+
+logger = logging.getLogger(__name__)
+
+
+class BatchProcessor:
+    """
+    Processes multiple companies through a screening protocol.
+    
+    Handles progress tracking, error recovery, and stop/resume functionality.
+    """
+    
+    def __init__(
+        self,
+        protocol: BatchProtocol,
+        storage: AnalysisStorage,
+        progress_callback: Optional[Callable] = None
+    ):
+        """
+        Initialize batch processor.
+        
+        Args:
+            protocol: Screening protocol to follow
+            storage: Storage system for saving results
+            progress_callback: Function to call with progress updates
+        """
+        self.protocol = protocol
+        self.storage = storage
+        self.progress_callback = progress_callback
+        
+        # Initialize agents
+        self.buffett_agent = BuffettAgent()
+        self.sharia_screener = ShariaScreener()
+        
+        # State tracking
+        self.state = {
+            "status": "idle",  # idle, running, paused, complete, error
+            "batch_id": None,
+            "start_time": None,
+            "total_companies": 0,
+            "current_stage": 0,
+            "current_company_index": 0,
+            "companies": [],
+            "results": {},
+            "errors": [],
+            "stage_stats": []
+        }
+        
+        self.should_stop = False
+    
+    def load_tickers_from_csv(self, csv_path: str) -> List[str]:
+        """
+        Load tickers from CSV file.
+        
+        Expected format:
+        ticker
+        AAPL
+        MSFT
+        ...
+        
+        Args:
+            csv_path: Path to CSV file
+            
+        Returns:
+            List of ticker symbols
+        """
+        tickers = []
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                
+                if 'ticker' not in reader.fieldnames:
+                    raise ValueError("CSV must have 'ticker' column")
+                
+                for row in reader:
+                    ticker = row['ticker'].strip().upper()
+                    if ticker and len(ticker) <= 5:  # Valid ticker format
+                        tickers.append(ticker)
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_tickers = []
+            for ticker in tickers:
+                if ticker not in seen:
+                    seen.add(ticker)
+                    unique_tickers.append(ticker)
+            
+            logger.info(f"Loaded {len(unique_tickers)} tickers from {csv_path}")
+            return unique_tickers
+        
+        except Exception as e:
+            logger.error(f"Failed to load tickers from CSV: {e}")
+            raise
+    
+    def start_batch(self, tickers: List[str], batch_id: Optional[str] = None) -> str:
+        """
+        Start batch processing.
+        
+        Args:
+            tickers: List of ticker symbols to process
+            batch_id: Optional batch ID (for resuming)
+            
+        Returns:
+            Batch ID
+        """
+        if not batch_id:
+            batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        self.state = {
+            "status": "running",
+            "batch_id": batch_id,
+            "start_time": datetime.now(),
+            "total_companies": len(tickers),
+            "current_stage": 0,
+            "current_company_index": 0,
+            "companies": tickers,
+            "results": {ticker: {} for ticker in tickers},
+            "errors": [],
+            "stage_stats": []
+        }
+        
+        self.should_stop = False
+        
+        logger.info(f"Starting batch {batch_id} with {len(tickers)} companies")
+        self._send_progress()
+        
+        return batch_id
+    
+    def process_batch(self) -> Dict[str, Any]:
+        """
+        Process entire batch following protocol.
+        
+        Returns:
+            Final batch results
+        """
+        try:
+            # Process each stage
+            for stage_index in range(self.protocol.total_stages()):
+                if self.should_stop:
+                    self.state["status"] = "paused"
+                    logger.info(f"Batch paused at stage {stage_index}")
+                    return self.state
+                
+                self.state["current_stage"] = stage_index
+                self._process_stage(stage_index)
+            
+            # Batch complete
+            self.state["status"] = "complete"
+            self.state["end_time"] = datetime.now()
+            
+            duration = (self.state["end_time"] - self.state["start_time"]).total_seconds()
+            self.state["duration_seconds"] = duration
+            
+            logger.info(f"Batch {self.state['batch_id']} complete in {duration:.0f}s")
+            self._send_progress()
+            
+            return self.state
+        
+        except Exception as e:
+            logger.error(f"Batch processing failed: {e}")
+            self.state["status"] = "error"
+            self.state["error"] = str(e)
+            return self.state
+    
+    def _process_stage(self, stage_index: int):
+        """Process single stage of protocol."""
+        stage = self.protocol.get_stage(stage_index)
+        if not stage:
+            return
+        
+        logger.info(f"Processing stage {stage_index + 1}/{self.protocol.total_stages()}: {stage.name}")
+        
+        # Get companies that should be processed in this stage
+        companies_to_process = self._get_companies_for_stage(stage_index)
+        
+        stage_stats = {
+            "stage_name": stage.name,
+            "stage_index": stage_index,
+            "companies_processed": 0,
+            "passed": 0,
+            "failed": 0,
+            "errors": 0,
+            "start_time": datetime.now()
+        }
+        
+        # Process each company
+        for i, ticker in enumerate(companies_to_process):
+            if self.should_stop:
+                break
+            
+            self.state["current_company_index"] = i
+            self._send_progress()
+            
+            try:
+                # Run analysis
+                result = self._run_analysis(ticker, stage)
+                
+                # Store result
+                if ticker not in self.state["results"]:
+                    self.state["results"][ticker] = {}
+                
+                self.state["results"][ticker][f"stage_{stage_index}"] = result
+                
+                # Save to database
+                self.storage.save_analysis(result)
+                
+                # Track stats
+                stage_stats["companies_processed"] += 1
+                
+                if stage.should_progress(result.get('decision', '')):
+                    stage_stats["passed"] += 1
+                else:
+                    stage_stats["failed"] += 1
+                
+                logger.info(f"Completed {ticker}: {result.get('decision')}")
+            
+            except Exception as e:
+                logger.error(f"Error processing {ticker} in stage {stage_index}: {e}")
+                stage_stats["errors"] += 1
+                self.state["errors"].append({
+                    "ticker": ticker,
+                    "stage": stage_index,
+                    "error": str(e)
+                })
+        
+        # Finalize stage stats
+        stage_stats["end_time"] = datetime.now()
+        stage_stats["duration_seconds"] = (
+            stage_stats["end_time"] - stage_stats["start_time"]
+        ).total_seconds()
+        
+        self.state["stage_stats"].append(stage_stats)
+    
+    def _get_companies_for_stage(self, stage_index: int) -> List[str]:
+        """
+        Get list of companies that should be processed in this stage.
+        
+        For stage 0, all companies.
+        For stage N, only companies that passed stage N-1.
+        """
+        if stage_index == 0:
+            return self.state["companies"]
+        
+        # Get previous stage
+        prev_stage = self.protocol.get_stage(stage_index - 1)
+        if not prev_stage:
+            return []
+        
+        # Filter companies that passed previous stage
+        companies = []
+        for ticker in self.state["companies"]:
+            prev_result = self.state["results"].get(ticker, {}).get(f"stage_{stage_index - 1}")
+            if prev_result and prev_stage.should_progress(prev_result.get('decision', '')):
+                companies.append(ticker)
+        
+        return companies
+    
+    def _run_analysis(self, ticker: str, stage: ProtocolStage) -> Dict[str, Any]:
+        """Run analysis for a ticker at a specific stage."""
+        
+        if stage.analysis_type == AnalysisType.SHARIA:
+            # Sharia screening
+            result = self.sharia_screener.screen_company(ticker)
+            
+        elif stage.analysis_type == AnalysisType.QUICK:
+            # Quick screen
+            result = self.buffett_agent.analyze_company(
+                ticker=ticker,
+                deep_dive=False,
+                years_to_analyze=1
+            )
+            
+        elif stage.analysis_type == AnalysisType.DEEP_DIVE:
+            # Deep dive
+            years = stage.years_to_analyze or 5
+            result = self.buffett_agent.analyze_company(
+                ticker=ticker,
+                deep_dive=True,
+                years_to_analyze=years
+            )
+        
+        else:
+            raise ValueError(f"Unknown analysis type: {stage.analysis_type}")
+        
+        # Add batch metadata
+        result["metadata"]["batch_id"] = self.state["batch_id"]
+        result["metadata"]["batch_stage"] = stage.name
+        result["metadata"]["batch_stage_index"] = self.state["current_stage"]
+        
+        return result
+    
+    def _send_progress(self):
+        """Send progress update via callback."""
+        if self.progress_callback:
+            try:
+                self.progress_callback(self.state)
+            except Exception as e:
+                logger.error(f"Progress callback failed: {e}")
+    
+    def stop(self):
+        """Stop batch processing (will finish current company)."""
+        logger.info("Stop requested")
+        self.should_stop = True
+    
+    def resume(self):
+        """Resume paused batch processing."""
+        if self.state["status"] == "paused":
+            logger.info(f"Resuming batch {self.state['batch_id']}")
+            self.should_stop = False
+            self.state["status"] = "running"
+            return self.process_batch()
+        else:
+            logger.warning("Cannot resume - batch not paused")
+            return self.state
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Generate summary report of batch results.
+        
+        Returns:
+            Summary dictionary
+        """
+        summary = {
+            "batch_id": self.state["batch_id"],
+            "protocol": self.protocol.name,
+            "status": self.state["status"],
+            "total_companies": self.state["total_companies"],
+            "start_time": self.state["start_time"],
+            "end_time": self.state.get("end_time"),
+            "duration_seconds": self.state.get("duration_seconds"),
+            "stages": []
+        }
+        
+        # Stage summaries
+        for stage_stat in self.state["stage_stats"]:
+            stage_summary = {
+                "name": stage_stat["stage_name"],
+                "companies_processed": stage_stat["companies_processed"],
+                "passed": stage_stat["passed"],
+                "failed": stage_stat["failed"],
+                "errors": stage_stat["errors"],
+                "duration_seconds": stage_stat["duration_seconds"]
+            }
+            summary["stages"].append(stage_summary)
+        
+        # Find top recommendations (BUY decisions from final stage)
+        final_stage_index = self.protocol.total_stages() - 1
+        buy_decisions = []
+        
+        for ticker, results in self.state["results"].items():
+            final_result = results.get(f"stage_{final_stage_index}")
+            if final_result and final_result.get('decision', '').lower() == 'buy':
+                buy_decisions.append({
+                    "ticker": ticker,
+                    "company_name": final_result.get('company_name', ticker),
+                    "conviction": final_result.get('conviction'),
+                    "intrinsic_value": final_result.get('intrinsic_value'),
+                    "margin_of_safety": final_result.get('margin_of_safety'),
+                    "roic": final_result.get('metadata', {}).get('roic')
+                })
+        
+        summary["top_recommendations"] = sorted(
+            buy_decisions,
+            key=lambda x: x.get('margin_of_safety', 0),
+            reverse=True
+        )
+        
+        # Calculate total cost
+        total_cost = 0
+        for results in self.state["results"].values():
+            for stage_result in results.values():
+                cost = stage_result.get('metadata', {}).get('token_usage', {}).get('total_cost', 0)
+                total_cost += cost
+        
+        summary["total_cost"] = round(total_cost, 2)
+        
+        return summary
+
+
+__all__ = ["BatchProcessor"]
+```
+
+---
+
+## UI IMPLEMENTATION
+
+### File: Batch Processing UI
+
+**File:** Create new file `src/ui/pages/2_Batch_Processing.py`
+
+```python
+"""
+Batch processing interface for basīrah.
+
+Allows users to upload CSV files and run automated screening protocols.
+"""
+
+import streamlit as st
+import time
+from datetime import datetime
+from pathlib import Path
+import tempfile
+
+from src.batch.protocols import list_protocols, get_protocol
+from src.batch.batch_processor import BatchProcessor
+from src.storage.analysis_storage import AnalysisStorage
+
+
+def main():
+    """Main batch processing page."""
+    st.title("🔄 Batch Processing")
+    st.markdown("Automate screening of multiple companies following a protocol.")
+    
+    # Initialize storage
+    if 'analysis_storage' not in st.session_state:
+        st.session_state['analysis_storage'] = AnalysisStorage()
+    
+    storage = st.session_state['analysis_storage']
+    
+    # Check if batch is running
+    if st.session_state.get('batch_running', False):
+        render_running_batch()
+    else:
+        render_batch_setup(storage)
+
+
+def render_batch_setup(storage: AnalysisStorage):
+    """Render batch setup interface."""
+    
+    st.subheader("📁 Upload Companies")
+    
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Upload CSV file with tickers",
+        type=['csv'],
+        help="CSV file with single 'ticker' column"
+    )
+    
+    if uploaded_file:
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='wb') as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
+        
+        # Load tickers
+        try:
+            processor = BatchProcessor(
+                protocol=get_protocol("value_only"),  # Dummy for loading
+                storage=storage
+            )
+            tickers = processor.load_tickers_from_csv(tmp_path)
+            
+            st.success(f"✓ Loaded {len(tickers)} companies")
+            
+            # Preview
+            with st.expander("📋 Preview Tickers", expanded=False):
+                cols = st.columns(5)
+                for i, ticker in enumerate(tickers[:50]):  # Show first 50
+                    cols[i % 5].markdown(f"- {ticker}")
+                
+                if len(tickers) > 50:
+                    st.info(f"... and {len(tickers) - 50} more")
+            
+            # Store in session
+            st.session_state['batch_tickers'] = tickers
+            st.session_state['batch_csv_path'] = tmp_path
+        
+        except Exception as e:
+            st.error(f"❌ Error loading CSV: {e}")
+            return
+    
+    # Protocol selection
+    if st.session_state.get('batch_tickers'):
+        st.divider()
+        st.subheader("⚙️ Select Protocol")
+        
+        protocols = list_protocols()
+        protocol_options = {p.name: p for p in protocols}
+        
+        selected_protocol_name = st.selectbox(
+            "Screening Protocol",
+            options=list(protocol_options.keys()),
+            help="Choose how to screen companies"
+        )
+        
+        selected_protocol = protocol_options[selected_protocol_name]
+        
+        # Show protocol details
+        st.markdown(f"**{selected_protocol.description}**")
+        
+        st.markdown("**Stages:**")
+        for i, stage in enumerate(selected_protocol.stages, 1):
+            st.markdown(f"{i}. **{stage.name}** - {stage.description}")
+        
+        # Cost estimate
+        st.divider()
+        st.subheader("💰 Cost Estimate")
+        
+        num_companies = len(st.session_state['batch_tickers'])
+        estimate = selected_protocol.estimate_cost(num_companies)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Companies",
+                estimate['total_companies']
+            )
+        
+        with col2:
+            st.metric(
+                "Estimated Time",
+                f"{estimate['total_time_hours']}h"
+            )
+        
+        with col3:
+            st.metric(
+                "Estimated Cost",
+                f"${estimate['total_cost_min']} - ${estimate['total_cost_max']}"
+            )
+        
+        # Stage breakdown
+        with st.expander("📊 Stage Breakdown", expanded=False):
+            for stage_est in estimate['stage_breakdown']:
+                st.markdown(
+                    f"**{stage_est['stage_name']}**: "
+                    f"{stage_est['companies']} companies, "
+                    f"${stage_est['cost']:.2f}, "
+                    f"{stage_est['time_minutes']} min"
+                )
+        
+        st.info(
+            "💡 **Note:** Actual cost may be lower due to filtering at each stage. "
+            "Estimates assume all companies pass all stages."
+        )
+        
+        # Start button
+        st.divider()
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.markdown("**Ready to start batch processing?**")
+            st.markdown(f"- {num_companies} companies will be analyzed")
+            st.markdown(f"- Following {selected_protocol.name} protocol")
+            st.markdown(f"- Estimated duration: {estimate['total_time_hours']} hours")
+        
+        with col2:
+            if st.button("🚀 Start Batch", type="primary", use_container_width=True):
+                # Initialize batch processor
+                processor = BatchProcessor(
+                    protocol=selected_protocol,
+                    storage=storage,
+                    progress_callback=update_progress
+                )
+                
+                # Store in session
+                st.session_state['batch_processor'] = processor
+                st.session_state['batch_running'] = True
+                st.session_state['batch_start_time'] = datetime.now()
+                
+                # Start batch
+                batch_id = processor.start_batch(st.session_state['batch_tickers'])
+                st.session_state['batch_id'] = batch_id
+                
+                st.rerun()
+
+
+def render_running_batch():
+    """Render running batch interface with progress."""
+    
+    processor = st.session_state.get('batch_processor')
+    if not processor:
+        st.session_state['batch_running'] = False
+        st.rerun()
+        return
+    
+    st.subheader("🔄 Batch Processing in Progress")
+    
+    # Progress display
+    state = processor.state
+    
+    # Overall progress
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Status", state['status'].title())
+    
+    with col2:
+        current_stage = state['current_stage'] + 1
+        total_stages = processor.protocol.total_stages()
+        st.metric("Stage", f"{current_stage}/{total_stages}")
+    
+    with col3:
+        elapsed = (datetime.now() - state['start_time']).total_seconds()
+        st.metric("Elapsed Time", f"{elapsed/60:.0f} min")
+    
+    # Stage progress
+    st.divider()
+    st.markdown("### Current Stage Progress")
+    
+    if state['current_stage'] < processor.protocol.total_stages():
+        current_stage_obj = processor.protocol.get_stage(state['current_stage'])
+        st.markdown(f"**{current_stage_obj.name}**")
+        
+        # Get companies for this stage
+        companies_in_stage = processor._get_companies_for_stage(state['current_stage'])
+        total_in_stage = len(companies_in_stage)
+        current_index = state['current_company_index']
+        
+        # Progress bar
+        if total_in_stage > 0:
+            progress = min(current_index / total_in_stage, 1.0)
+            st.progress(progress)
+            st.markdown(f"**{current_index}/{total_in_stage}** companies processed")
+    
+    # Stage statistics
+    if state['stage_stats']:
+        st.divider()
+        st.markdown("### Stage Results")
+        
+        for stage_stat in state['stage_stats']:
+            with st.expander(f"✅ {stage_stat['stage_name']}", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Processed", stage_stat['companies_processed'])
+                
+                with col2:
+                    st.metric("Passed", stage_stat['passed'])
+                
+                with col3:
+                    st.metric("Failed", stage_stat['failed'])
+                
+                if stage_stat.get('duration_seconds'):
+                    st.caption(f"Duration: {stage_stat['duration_seconds']/60:.1f} minutes")
+    
+    # Control buttons
+    st.divider()
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("⏸️ Stop Batch", type="secondary", use_container_width=True):
+            processor.stop()
+            st.success("Stopping batch (will complete current company)...")
+            time.sleep(2)
+            st.rerun()
+    
+    # Auto-refresh
+    if state['status'] == 'running':
+        time.sleep(2)
+        st.rerun()
+    elif state['status'] == 'complete':
+        render_batch_complete(processor)
+    elif state['status'] == 'paused':
+        with col2:
+            if st.button("▶️ Resume Batch", type="primary", use_container_width=True):
+                processor.resume()
+                st.rerun()
+
+
+def render_batch_complete(processor: BatchProcessor):
+    """Render completion summary."""
+    st.success("✅ Batch Processing Complete!")
+    
+    summary = processor.get_summary()
+    
+    st.divider()
+    st.markdown("## 📊 Summary Report")
+    
+    # Overall stats
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Companies", summary['total_companies'])
+    
+    with col2:
+        duration_hours = summary['duration_seconds'] / 3600
+        st.metric("Duration", f"{duration_hours:.1f}h")
+    
+    with col3:
+        st.metric("Total Cost", f"${summary['total_cost']:.2f}")
+    
+    with col4:
+        num_recommendations = len(summary.get('top_recommendations', []))
+        st.metric("BUY Decisions", num_recommendations)
+    
+    # Funnel visualization
+    st.divider()
+    st.markdown("### 📉 Screening Funnel")
+    
+    for i, stage in enumerate(summary['stages']):
+        processed = stage['companies_processed']
+        passed = stage['passed']
+        failed = stage['failed']
+        
+        st.markdown(f"**Stage {i+1}: {stage['name']}**")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            if processed > 0:
+                pass_rate = passed / processed * 100
+                st.progress(pass_rate / 100)
+        
+        with col2:
+            st.markdown(f"{passed}/{processed} passed")
+        
+        st.markdown(f"↓ *{passed} companies continue to next stage*")
+        st.markdown("")
+    
+    # Top recommendations
+    if summary.get('top_recommendations'):
+        st.divider()
+        st.markdown("### ⭐ Top Recommendations")
+        
+        for rec in summary['top_recommendations'][:10]:  # Top 10
+            with st.container():
+                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                
+                with col1:
+                    st.markdown(f"**{rec['ticker']}** - {rec['company_name']}")
+                
+                with col2:
+                    st.markdown(f"**{rec['conviction']}** conviction")
+                
+                with col3:
+                    if rec.get('margin_of_safety'):
+                        st.markdown(f"MoS: **{rec['margin_of_safety']:.1f}%**")
+                
+                with col4:
+                    if rec.get('roic'):
+                        st.markdown(f"ROIC: **{rec['roic']:.1f}%**")
+                
+                st.divider()
+    
+    # Actions
+    st.divider()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📁 View All Results in History", type="primary", use_container_width=True):
+            st.switch_page("pages/1_History.py")
+    
+    with col2:
+        if st.button("📥 Download Summary Report", use_container_width=True):
+            # TODO: Generate downloadable report
+            st.info("Report download coming soon!")
+    
+    with col3:
+        if st.button("🔄 Start New Batch", use_container_width=True):
+            # Reset state
+            st.session_state['batch_running'] = False
+            st.session_state['batch_processor'] = None
+            st.session_state['batch_tickers'] = None
+            st.rerun()
+
+
+def update_progress(state: dict):
+    """Callback for progress updates."""
+    # Store in session for display
+    st.session_state['batch_state'] = state
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## INTEGRATION
+
+### Update Main App Navigation
+
+**File:** Modify `src/ui/app.py`
+
+**Add to sidebar (after History button):**
+
+```python
+# In sidebar
+if st.button("🔄 Batch Processing", use_container_width=True):
+    st.switch_page("pages/2_Batch_Processing.py")
+```
+
+---
+
+## TESTING
+
+### Test 1: CSV Loading
+
+**Test File:** `test_companies.csv`
+
+```csv
+ticker
+AAPL
+MSFT
+GOOG
+JPM
+F
+```
+
+**Test:**
+```python
+from src.batch.batch_processor import BatchProcessor
+from src.batch.protocols import get_protocol
+from src.storage import AnalysisStorage
+
+processor = BatchProcessor(
+    protocol=get_protocol("value_only"),
+    storage=AnalysisStorage()
+)
+
+tickers = processor.load_tickers_from_csv("test_companies.csv")
+print(f"Loaded {len(tickers)} tickers: {tickers}")
+```
+
+### Test 2: Protocol Execution
+
+```python
+# Small test batch
+tickers = ["AAPL", "MSFT"]
+
+processor.start_batch(tickers)
+result = processor.process_batch()
+
+print(f"Status: {result['status']}")
+print(f"Stage stats: {result['stage_stats']}")
+```
+
+### Test 3: Stop/Resume
+
+```python
+# Start batch
+processor.start_batch(tickers)
+
+# Start processing in thread
+import threading
+thread = threading.Thread(target=processor.process_batch)
+thread.start()
+
+# Stop after 30 seconds
+time.sleep(30)
+processor.stop()
+thread.join()
+
+# Resume
+processor.resume()
+```
+
+---
+
+## SUCCESS CRITERIA
+
+### Phase 6C.2 Complete When:
+
+**CSV Processing:**
+- [ ] CSV upload works
+- [ ] Tickers loaded correctly
+- [ ] Duplicates removed
+- [ ] Invalid tickers flagged
+
+**Protocol System:**
+- [ ] 4 protocols defined
+- [ ] Stage progression works
+- [ ] Decision filtering works
+- [ ] Cost estimation accurate
+
+**Batch Processor:**
+- [ ] Processes all stages
+- [ ] Saves to database automatically
+- [ ] Progress tracking works
+- [ ] Stop/resume functional
+- [ ] Error handling robust
+
+**UI:**
+- [ ] Upload interface works
+- [ ] Protocol selection clear
+- [ ] Progress display real-time
+- [ ] Summary report complete
+- [ ] Navigation to history works
+
+**Integration:**
+- [ ] All analyses saved via Phase 6C.1 system
+- [ ] Searchable in history
+- [ ] Cost tracking accurate
+
+---
+
+## FILES SUMMARY
+
+### Files Created (3)
+
+1. **`src/batch/protocols.py`** - Protocol definitions
+2. **`src/batch/batch_processor.py`** - Batch processing engine
+3. **`src/ui/pages/2_Batch_Processing.py`** - UI
+
+### Files Modified (1)
+
+1. **`src/ui/app.py`** - Add navigation button
+
+---
+
+## ESTIMATED TIMELINE
+
+| Task | Time |
+|------|------|
+| **Protocol System** | 90 min |
+| **Batch Processor** | 180 min |
+| **UI Implementation** | 120 min |
+| **Integration** | 30 min |
+| **Testing** | 60 min |
+| **Documentation** | 20 min |
+| **Total** | **~8 hours** |
+
+---
+
+## CONCLUSION
+
+Phase 6C.2 transforms basīrah into a portfolio-building engine capable of screening hundreds of companies automatically. Combined with Phase 6C.1's database, this creates a complete investment research platform.
+
+**Ready for implementation!** 🚀
+
+---
+
+*Phase 6C.2: Automated Batch Screening Protocol*
+*Estimated: 8 hours | Strategic Value: MASSIVE*
+*Status: Ready for Implementation*

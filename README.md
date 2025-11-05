@@ -47,11 +47,18 @@
 - **Valuation (DCF)** - Conservative discounted cash flow analysis
 - **Risk Assessment** - Identifies top 5 risks with detailed analysis
 
+- **Analysis History & Search** - PostgreSQL database with powerful multi-criteria search (Phase 6C.1)
+- **Auto-Save** - Every analysis automatically saved to local history database
+- **Portfolio Tracking** - Track your analyzed companies over time
+
 ### 🛠️ Technical Features
 
 - **ReAct Agent Architecture** - Reasoning + Acting with extended thinking (8K budget)
 - **Progressive Summarization** - 3-stage analysis (current year → prior years → synthesis)
 - **Adaptive Strategies** - Automatic routing (standard vs summarization) based on filing size
+- **PostgreSQL Database** - Runs in Docker with full-text search and indexing
+- **Hybrid Storage** - Metadata in database, full content in organized file system
+- **Multi-Criteria Search** - Filter by ticker, type, decision, dates, financial metrics
 - **Tool Integration** - SEC EDGAR, GuruFocus, Web Search, Calculator
 - **Context Management** - Handles filings up to 552K+ characters
 - **Export Options** - JSON, Markdown, Web UI display
