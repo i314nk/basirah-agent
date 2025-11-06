@@ -91,12 +91,31 @@
    cd basira-agent
    ```
 
-2. **Install dependencies**
+2. **Create and activate virtual environment** (recommended)
+   ```bash
+   # Create virtual environment
+   python -m venv venv
+
+   # Activate virtual environment
+   # On Windows (Git Bash):
+   source venv/Scripts/activate
+
+   # On Windows (Command Prompt):
+   venv\Scripts\activate.bat
+
+   # On Windows (PowerShell):
+   venv\Scripts\Activate.ps1
+
+   # On macOS/Linux:
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure environment variables**
+4. **Configure environment variables**
    ```bash
    cp .env.example .env
    # Edit .env and add your API keys:
