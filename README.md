@@ -167,6 +167,16 @@ print(json.dumps(result, indent=2))
 - **[Adaptive Summarization Fix](docs/phases/phase_5/ADAPTIVE_SUMMARIZATION_FIX.md)** - Handling large 10-K filings
 - **[Complete Thesis Fix](docs/phases/phase_6a/PHASE_6A1_COMPLETE_THESIS_FIX.md)** - Generating comprehensive analyses
 
+### Bug Fixes & Improvements
+
+- **[Multi-Year Analysis Fixes (2025-11-06)](docs/bug_fixes/2025-11-06_multi_year_analysis_fixes.md)** - Critical fixes for 10-year analyses
+  - Extended Thinking compatibility
+  - Context window management improvements
+  - Margin of safety logic correction
+  - Dynamic fiscal year handling
+  - Missing filing tracking and reporting
+  - Real-time progress updates
+
 ### Development History
 
 - [Phase 1](docs/phases/phase_1/) - Initial implementation and testing

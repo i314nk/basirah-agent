@@ -153,7 +153,7 @@ class AnalysisStorage:
 
     def _normalize_decision(self, decision: str, analysis_type: str) -> str:
         """Normalize decision to lowercase for consistency."""
-        decision_lower = decision.lower()
+        decision_lower = decision.lower() if decision else ''
 
         # Map variations to standard values
         if analysis_type == 'sharia':
@@ -164,16 +164,21 @@ class AnalysisStorage:
             else:
                 return 'non_compliant'
         elif analysis_type == 'quick':
-            if 'investigate' in decision_lower:
-                return 'investigate'
-            else:
+            # For quick screens, default to investigate if unknown
+            if 'pass' in decision_lower:
                 return 'pass'
+            else:
+                # Investigate for unknown, investigate, or anything else
+                return 'investigate'
         else:  # deep_dive
             if 'buy' in decision_lower:
                 return 'buy'
             elif 'watch' in decision_lower:
                 return 'watch'
+            elif 'avoid' in decision_lower:
+                return 'avoid'
             else:
+                # Default to avoid for unknown deep dive
                 return 'avoid'
 
     def _generate_analysis_id(
@@ -183,8 +188,10 @@ class AnalysisStorage:
         decision: str,
         years: Optional[int] = None
     ) -> str:
-        """Generate unique analysis ID."""
-        base = f"{ticker}_{date.isoformat()}_{decision}"
+        """Generate unique analysis ID with timestamp to avoid duplicates."""
+        # Include time (HH-MM-SS) to ensure uniqueness
+        timestamp = datetime.now().strftime("%H%M%S")
+        base = f"{ticker}_{date.isoformat()}_{decision}_{timestamp}"
         if years and years > 1:
             return f"{base}_{years}y"
         return base

@@ -106,30 +106,46 @@ def render_results(result: Dict[str, Any]):
         st.markdown("## 📝 Investment Analysis Results")
         st.divider()
 
-        # Check if this is a Quick Screen (no intrinsic value calculated)
-        is_quick_screen = result.get('intrinsic_value') is None
+        # Check if this is a Quick Screen
+        # Check both metadata and the absence of deep dive indicators
+        analysis_type = result.get('metadata', {}).get('analysis_type', '')
+        is_quick_screen = (
+            analysis_type == 'quick' or
+            analysis_type == 'quick_screen' or
+            result.get('intrinsic_value') is None
+        )
 
         if is_quick_screen:
             # Extract Quick Screen recommendation from thesis
-            thesis = result.get('thesis', '').upper()  # Convert to uppercase for case-insensitive matching
+            thesis = result.get('thesis', '')
+            thesis_upper = thesis.upper()
 
             # Check for various patterns of INVESTIGATE recommendation
-            if any(pattern in thesis for pattern in [
+            if any(pattern in thesis_upper for pattern in [
                 '🟢 INVESTIGATE',
                 'INVESTIGATE',
                 'RECOMMENDATION: INVESTIGATE',
                 'RECOMMENDATION:** INVESTIGATE',
-                'RECOMMENDATION: 🟢 INVESTIGATE',
-                'DEEP DIVE RECOMMENDATION\n\n**RECOMMENDATION:** 🟢 INVESTIGATE'
+                'RECOMMENDATION: 🟢 INVESTIGATE'
             ]):
-                st.success("🟢 **INVESTIGATE** - Deep Dive Recommended")
+                # Try to extract confidence level from thesis
+                confidence = ""
+                if "HIGH CONFIDENCE" in thesis_upper or "CONFIDENCE: HIGH" in thesis_upper:
+                    confidence = " (High Confidence)"
+                elif "MEDIUM CONFIDENCE" in thesis_upper or "CONFIDENCE: MEDIUM" in thesis_upper:
+                    confidence = " (Medium Confidence)"
+                elif "MODERATE CONFIDENCE" in thesis_upper or "CONFIDENCE: MODERATE" in thesis_upper:
+                    confidence = " (Moderate Confidence)"
+                elif "LOW CONFIDENCE" in thesis_upper or "CONFIDENCE: LOW" in thesis_upper:
+                    confidence = " (Low Confidence)"
+
+                st.success(f"🟢 **INVESTIGATE**{confidence} - Deep Dive Recommended")
             # Check for various patterns of PASS recommendation
-            elif any(pattern in thesis for pattern in [
+            elif any(pattern in thesis_upper for pattern in [
                 '🔴 PASS',
                 'RECOMMENDATION: PASS',
                 'RECOMMENDATION:** PASS',
-                'RECOMMENDATION: 🔴 PASS',
-                'DEEP DIVE RECOMMENDATION\n\n**RECOMMENDATION:** 🔴 PASS'
+                'RECOMMENDATION: 🔴 PASS'
             ]):
                 st.error("🔴 **PASS** - Skip Deep Dive")
             else:
@@ -185,7 +201,15 @@ def render_results(result: Dict[str, Any]):
                     st.markdown(f"**Strategy:** {get_strategy_badge(strategy)}")
 
                     years = cm.get('years_analyzed', [])
-                    st.markdown(f"**Years Analyzed:** {', '.join(map(str, years))}")
+                    years_requested = cm.get('years_requested', len(years))
+                    st.markdown(f"**Years Analyzed:** {', '.join(map(str, years))} ({len(years)} of {years_requested} requested)")
+
+                    # Show missing years if any
+                    missing_years = cm.get('years_skipped')
+                    if missing_years:
+                        st.warning(f"⚠️ **Years Skipped:** {', '.join(map(str, sorted(missing_years, reverse=True)))}\n\n"
+                                   f"These fiscal years were requested but 10-K filings were not available. "
+                                   f"This is common for companies that were spun off from parent companies or have limited filing history.")
 
                     current_tokens = cm.get('current_year_tokens', 0)
                     st.markdown(f"**Current Year Tokens:** ~{current_tokens:,}")

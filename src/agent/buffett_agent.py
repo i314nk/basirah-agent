@@ -65,6 +65,29 @@ class WarrenBuffettAgent:
     THINKING_BUDGET = 8000  # Extended thinking budget (must be < MAX_TOKENS)
     MAX_ITERATIONS = 30  # Maximum tool call iterations
 
+    # Context window management
+    MAX_CONTEXT_TOKENS = 200000  # Claude's max context
+    CONTEXT_PRUNE_THRESHOLD = 100000  # Start pruning at 100K tokens (conservative for safety)
+    MIN_RECENT_MESSAGES = 4  # Keep at least last 2 exchanges (user+assistant pairs)
+
+    @property
+    def current_year(self) -> int:
+        """Get the current calendar year."""
+        return datetime.now().year
+
+    @property
+    def most_recent_fiscal_year(self) -> int:
+        """
+        Get the most recent completed fiscal year for which 10-Ks are available.
+
+        For most calendar-year companies, 10-Ks are filed 2-3 months after year end.
+        So the most recent available 10-K is typically for the prior calendar year.
+
+        Returns:
+            int: Most recent fiscal year (current_year - 1)
+        """
+        return self.current_year - 1
+
     def __init__(self, api_key: Optional[str] = None):
         """
         Initialize Warren Buffett AI Agent.
@@ -145,7 +168,8 @@ class WarrenBuffettAgent:
         self,
         ticker: str,
         deep_dive: bool = True,
-        years_to_analyze: int = 3
+        years_to_analyze: int = 3,
+        progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Analyze a company like Warren Buffett would.
@@ -166,6 +190,8 @@ class WarrenBuffettAgent:
                       If False, quick screen only
             years_to_analyze: Number of years to analyze (1-10, default 3)
                             Includes current year + (years_to_analyze - 1) prior years
+            progress_callback: Optional callback function for progress updates
+                             Called with dict: {"stage": str, "progress": float, "message": str}
 
         Returns:
             {
@@ -192,6 +218,9 @@ class WarrenBuffettAgent:
             }
         """
         start_time = datetime.now()
+
+        # Store progress callback for use throughout analysis
+        self._progress_callback = progress_callback
 
         # Reset token counters for this analysis
         self._total_input_tokens = 0
@@ -283,27 +312,71 @@ class WarrenBuffettAgent:
         logger.info(f"DEEP DIVE WITH CONTEXT MANAGEMENT: {ticker}")
         logger.info(f"=" * 80)
 
-        # Stage 1: Current Year Full Analysis
-        logger.info("\n[STAGE 1] Analyzing current year 10-K in detail...")
+        # Stage 1: Current Year Full Analysis (0-40% progress)
+        logger.info(f"\n[STAGE 1] Analyzing current year ({self.most_recent_fiscal_year}) 10-K in detail...")
+        self._report_progress(
+            stage="current_year",
+            progress=0.0,
+            message=f"📖 Stage 1: Reading most recent 10-K (FY {self.most_recent_fiscal_year})..."
+        )
         current_year_analysis = self._analyze_current_year(ticker)
         logger.info(f"[STAGE 1] Complete. Estimated tokens: ~{current_year_analysis.get('token_estimate', 0)}")
+        self._report_progress(
+            stage="current_year",
+            progress=0.4,
+            message=f"✅ Stage 1 Complete: FY {self.most_recent_fiscal_year} analyzed"
+        )
 
-        # Stage 2: Prior Years with Summarization
+        # Stage 2: Prior Years with Summarization (40-80% progress)
         # years_to_analyze includes current year, so subtract 1 for prior years
         num_prior_years = max(0, years_to_analyze - 1)
         logger.info(f"\n[STAGE 2] Analyzing prior years with summarization... (analyzing {num_prior_years} prior years)")
-        prior_years_summaries = self._analyze_prior_years(ticker, num_years=num_prior_years)
-        total_prior_tokens = sum(p.get('token_estimate', 0) for p in prior_years_summaries)
-        logger.info(f"[STAGE 2] Complete. {len(prior_years_summaries)} years summarized. Tokens: ~{total_prior_tokens}")
 
-        # Stage 3: Multi-Year Synthesis
+        if num_prior_years > 0:
+            self._report_progress(
+                stage="prior_years",
+                progress=0.4,
+                message=f"📚 Stage 2: Analyzing {num_prior_years} prior years..."
+            )
+
+        prior_years_summaries, missing_years = self._analyze_prior_years(ticker, num_years=num_prior_years, years_to_analyze=years_to_analyze)
+        total_prior_tokens = sum(p.get('token_estimate', 0) for p in prior_years_summaries)
+
+        # Log comprehensive summary of analysis coverage
+        actual_years_analyzed = len(prior_years_summaries)
+        if missing_years:
+            logger.info(
+                f"[STAGE 2] Complete. {actual_years_analyzed} years successfully analyzed. "
+                f"Skipped {len(missing_years)} years (10-Ks not available). Tokens: ~{total_prior_tokens}"
+            )
+        else:
+            logger.info(f"[STAGE 2] Complete. {actual_years_analyzed} years summarized. Tokens: ~{total_prior_tokens}")
+
+        if num_prior_years > 0:
+            self._report_progress(
+                stage="prior_years",
+                progress=0.8,
+                message=f"✅ Stage 2 Complete: {num_prior_years} prior years analyzed"
+            )
+
+        # Stage 3: Multi-Year Synthesis (80-100% progress)
         logger.info("\n[STAGE 3] Synthesizing multi-year findings...")
+        self._report_progress(
+            stage="synthesis",
+            progress=0.8,
+            message=f"🧠 Stage 3: Synthesizing {years_to_analyze}-year analysis..."
+        )
         final_thesis = self._synthesize_multi_year_analysis(
             ticker=ticker,
             current_year=current_year_analysis,
             prior_years=prior_years_summaries
         )
         logger.info(f"[STAGE 3] Complete. Final decision: {final_thesis['decision']}")
+        self._report_progress(
+            stage="synthesis",
+            progress=1.0,
+            message=f"✅ Analysis Complete: Decision is {final_thesis['decision']}"
+        )
 
         # Add context management metadata
         total_token_estimate = (
@@ -321,6 +394,9 @@ class WarrenBuffettAgent:
             "prior_years_tokens": total_prior_tokens,
             "total_token_estimate": total_token_estimate,
             "years_analyzed": [current_year_analysis.get('year')] + [p['year'] for p in prior_years_summaries],
+            "years_requested": years_to_analyze,
+            "years_skipped": missing_years if missing_years else None,  # List of years with no 10-K available
+            "years_skipped_count": len(missing_years),
 
             # Additional fields for adaptive strategy
             "adaptive_used": adaptive_used,
@@ -332,6 +408,8 @@ class WarrenBuffettAgent:
         logger.info(f"\nTotal estimated context: ~{total_token_estimate} tokens")
         logger.info(f"Strategy: {current_year_strategy}" + (f" (adaptive applied to large filing)" if adaptive_used else ""))
         logger.info(f"Years analyzed: {final_thesis['metadata']['context_management']['years_analyzed']}")
+        if missing_years:
+            logger.info(f"Years skipped (no 10-K available): {sorted(missing_years, reverse=True)}")
 
         return final_thesis
 
@@ -584,7 +662,7 @@ Confusing businesses → PASS (circle of competence)
                 'filing_size': int
             }
         """
-        logger.info(f"Analyzing current year (2024) 10-K for {ticker}")
+        logger.info(f"Analyzing current fiscal year ({self.most_recent_fiscal_year}) 10-K for {ticker}")
 
         # Pre-fetch 10-K to check size and determine strategy
         logger.info(f"Pre-fetching 10-K to determine analysis strategy...")
@@ -707,7 +785,7 @@ Take your time. Be thorough. This is the foundation of your multi-year analysis.
         token_estimate = len(result.get('thesis', '')) // 4
 
         return {
-            'year': 2024,
+            'year': self.most_recent_fiscal_year,
             'full_analysis': result.get('thesis', ''),
             'tool_calls_made': result.get('metadata', {}).get('tool_calls_made', 0),
             'token_estimate': token_estimate,
@@ -878,7 +956,7 @@ comparison.
         )
 
         return {
-            'year': 2024,
+            'year': self.most_recent_fiscal_year,
             'full_analysis': summary,  # Use summary instead of full response
             'tool_calls_made': result.get('metadata', {}).get('tool_calls_made', 0),
             'token_estimate': token_estimate,
@@ -889,7 +967,7 @@ comparison.
             'reduction_percent': reduction_pct
         }
 
-    def _analyze_prior_years(self, ticker: str, num_years: int = 2) -> List[Dict[str, Any]]:
+    def _analyze_prior_years(self, ticker: str, num_years: int = 2, years_to_analyze: int = 3) -> List[Dict[str, Any]]:
         """
         Stage 2: Analyze prior years and create concise summaries.
 
@@ -904,32 +982,70 @@ comparison.
         Args:
             ticker: Stock ticker
             num_years: Number of prior years to analyze (default: 2)
+            years_to_analyze: Total years being analyzed (for progress calculation)
 
         Returns:
-            List of year summaries:
-            [
-                {
-                    'year': 2023,
-                    'summary': str,  # 2-3K tokens
-                    'key_metrics': dict,
-                    'token_estimate': int
-                },
-                ...
-            ]
+            Tuple of (summaries, missing_years):
+            - summaries: List of year summaries for successfully analyzed years
+            - missing_years: List of fiscal years where 10-Ks were not available (sorted desc)
+
+            Example:
+            (
+                [{'year': 2023, 'summary': '...', ...}, {'year': 2022, 'summary': '...', ...}],
+                [2018, 2017, 2016]  # Missing years
+            )
         """
         summaries = []
-        current_year = 2024
+        missing_years = []  # Track years where 10-Ks weren't available
+        most_recent_year = self.most_recent_fiscal_year
 
         for i in range(num_years):
-            year = current_year - 1 - i  # 2023, 2022, etc.
+            year = most_recent_year - 1 - i  # 2023, 2022, etc. (starting from year before most recent)
+            year_number = i + 2  # Year 2 of total analysis (after most recent which is year 1)
+
+            # Calculate progress within Stage 2 (40-80% overall)
+            # Stage 2 covers 40% of total progress, distributed across prior years
+            if num_years > 0:
+                year_progress_start = 0.4 + (i / num_years) * 0.4
+                year_progress_end = 0.4 + ((i + 1) / num_years) * 0.4
+            else:
+                year_progress_start = 0.4
+                year_progress_end = 0.8
+
+            logger.info(f"  Checking availability of {year} 10-K for {ticker}...")
+
+            # Pre-check if filing exists to avoid wasting iterations
+            try:
+                filing_check = self.tools["sec_filing"].execute(
+                    ticker=ticker,
+                    filing_type="10-K",
+                    section="full",
+                    year=year
+                )
+
+                if not filing_check.get("success"):
+                    logger.warning(f"  Skipping {year}: 10-K not available ({filing_check.get('error', 'unknown error')})")
+                    logger.info(f"  Note: This is common for companies spun off from parent companies or with limited filing history")
+                    missing_years.append(year)  # Track missing year
+                    continue
+
+            except Exception as e:
+                logger.warning(f"  Skipping {year}: Unable to retrieve 10-K ({str(e)})")
+                missing_years.append(year)  # Track missing year
+                continue
 
             logger.info(f"  Analyzing {year} 10-K for {ticker}...")
+            self._report_progress(
+                stage="prior_years",
+                progress=year_progress_start,
+                message=f"📅 Year {year_number} of {years_to_analyze}: Reading FY {year} 10-K..."
+            )
 
             prior_year_prompt = f"""I'd like you to analyze {ticker}'s {year} annual report (10-K).
 
 **CONTEXT:**
 
-You've already analyzed the current year (2024). Now we're looking at {year} to
+You've already analyzed the most recent fiscal year ({self.most_recent_fiscal_year}). Now we're looking at {year} to
 identify trends and changes over time.
 
 **YOUR TASK:**
@@ -1018,7 +1134,18 @@ Focus on facts and metrics that matter for long-term investment decisions.
 
             logger.info(f"  Created {year} summary: ~{token_estimate} tokens")
 
-        return summaries
+            # Report progress for this completed year
+            self._report_progress(
+                stage="prior_years",
+                progress=year_progress_end,
+                message=f"✅ Year {year_number} of {years_to_analyze} complete: FY {year} analyzed"
+            )
+
+        # Log summary of missing years
+        if missing_years:
+            logger.warning(f"Skipped {len(missing_years)} years due to unavailable 10-Ks: {', '.join(map(str, sorted(missing_years, reverse=True)))}")
+
+        return summaries, missing_years
 
     def _get_complete_thesis_prompt(
         self,
@@ -1327,10 +1454,13 @@ Current Price: $XXX
 Difference: $XXX (±X%)
 Margin of Safety: X%
 
-Your Requirements:
-- Excellent business (wide moat): Need 40%+ margin
-- Good business (moderate moat): Need 25%+ margin
-- Fair business: Need 15%+ minimum margin
+Your Requirements by Business Quality:
+- Excellent business (wide moat): Can accept 15-20% margin (high certainty)
+- Good business (moderate moat): Need 25-30% margin (moderate certainty)
+- Fair/Average business: Need 40%+ margin (low certainty, higher risk)
+
+Rationale: Wider moats = more predictable = lower margin needed.
+          Narrow moats = less predictable = higher margin needed.
 
 Current margin: X%
 Status: Sufficient / Insufficient / Marginal
@@ -1498,8 +1628,118 @@ Now write your complete investment thesis with all 10 sections.
         return final_result
 
     # ========================================================================
+    # HELPER METHODS FOR PROGRESS REPORTING
+    # ========================================================================
+
+    def _report_progress(self, stage: str, progress: float, message: str):
+        """
+        Report progress to callback if provided.
+
+        Args:
+            stage: Current stage (e.g., "current_year", "prior_years", "synthesis")
+            progress: Progress as float 0.0-1.0 (0-100%)
+            message: Human-readable status message
+        """
+        if self._progress_callback:
+            try:
+                self._progress_callback({
+                    "stage": stage,
+                    "progress": progress,
+                    "message": message
+                })
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
+    # ========================================================================
     # HELPER METHODS FOR CONTEXT MANAGEMENT
     # ========================================================================
+
+    def _estimate_message_tokens(self, messages: List[Dict[str, Any]]) -> int:
+        """
+        Estimate total tokens in message history.
+
+        Uses rough heuristic: 1 token ≈ 4 characters
+        This is conservative for safety.
+
+        Args:
+            messages: List of message dicts with role and content
+
+        Returns:
+            Estimated token count
+        """
+        total_chars = 0
+
+        for msg in messages:
+            content = msg.get("content", "")
+
+            # Handle different content formats
+            if isinstance(content, str):
+                total_chars += len(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        # Tool result
+                        if "content" in block:
+                            total_chars += len(str(block["content"]))
+                    else:
+                        # Content block from API response
+                        if hasattr(block, "text"):
+                            total_chars += len(block.text)
+                        elif hasattr(block, "thinking"):
+                            total_chars += len(block.thinking)
+                        elif hasattr(block, "input"):
+                            total_chars += len(str(block.input))
+
+        # Convert to tokens (1 token ≈ 4 chars, conservative)
+        return total_chars // 4
+
+    def _prune_old_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Prune old messages to keep context under threshold.
+
+        Strategy:
+        1. Always keep initial user prompt (messages[0])
+        2. Keep only recent N message pairs (user + assistant)
+        3. NO summary message (to preserve Extended Thinking format)
+
+        IMPORTANT: When Extended Thinking is enabled, we cannot insert arbitrary
+        user messages as they break the thinking block requirements. We only keep
+        initial prompt + most recent exchanges.
+
+        Args:
+            messages: Current message history
+
+        Returns:
+            Pruned message list
+        """
+        if len(messages) <= self.MIN_RECENT_MESSAGES + 1:
+            # Not enough messages to prune
+            return messages
+
+        logger.warning(
+            f"Context approaching limit. Pruning old messages to keep "
+            f"last {self.MIN_RECENT_MESSAGES // 2} exchanges."
+        )
+
+        # Keep initial prompt
+        initial_prompt = messages[0]
+
+        # Keep only recent messages
+        recent_messages = messages[-(self.MIN_RECENT_MESSAGES):]
+
+        # Calculate pruned count for logging
+        pruned_count = len(messages) - len(recent_messages) - 1
+
+        # Combine: initial + recent (NO summary message to preserve thinking format)
+        pruned_messages = [initial_prompt] + recent_messages
+
+        logger.info(
+            f"Pruned {pruned_count} messages. "
+            f"Kept {len(pruned_messages)} messages "
+            f"(~{self._estimate_message_tokens(pruned_messages)} tokens)"
+        )
+
+        return pruned_messages
 
     def _extract_summary_from_response(self, response_text: str, year: int, ticker: str = None) -> str:
         """
@@ -1715,6 +1955,19 @@ Now write your complete investment thesis with all 10 sections.
                         "content": tool_results
                     })
 
+                    # Check context size and prune if approaching limit
+                    estimated_tokens = self._estimate_message_tokens(messages)
+                    logger.debug(f"Current context: ~{estimated_tokens} tokens")
+
+                    if estimated_tokens > self.CONTEXT_PRUNE_THRESHOLD:
+                        logger.warning(
+                            f"Context size ({estimated_tokens} tokens) exceeds threshold "
+                            f"({self.CONTEXT_PRUNE_THRESHOLD} tokens). Pruning old messages..."
+                        )
+                        messages = self._prune_old_messages(messages)
+                        estimated_tokens = self._estimate_message_tokens(messages)
+                        logger.info(f"After pruning: ~{estimated_tokens} tokens")
+
                     # Continue loop (agent will process results)
                     continue
 
@@ -1753,6 +2006,32 @@ Now write your complete investment thesis with all 10 sections.
                 logger.warning(f"Rate limit hit: {e}")
                 # In production, you'd want to implement backoff/retry
                 raise
+
+            except anthropic.BadRequestError as e:
+                # Handle "prompt is too long" errors
+                error_msg = str(e)
+                if "prompt is too long" in error_msg.lower() or "too many tokens" in error_msg.lower():
+                    logger.error(f"Context window exceeded: {error_msg}")
+                    logger.error(f"Current message count: {len(messages)}")
+                    estimated_tokens = self._estimate_message_tokens(messages)
+                    logger.error(f"Estimated tokens: {estimated_tokens}")
+
+                    # Try aggressive pruning as last resort
+                    # Keep only initial + last 2 messages (1 exchange minimum)
+                    if len(messages) > 3:
+                        logger.warning("Attempting aggressive context pruning (keeping only 1 exchange)...")
+                        initial_prompt = messages[0]
+                        last_two = messages[-2:]  # Last user + assistant exchange
+                        messages = [initial_prompt] + last_two
+                        logger.info(f"After aggressive pruning: {len(messages)} messages, ~{self._estimate_message_tokens(messages)} tokens")
+                        # Retry this iteration
+                        continue
+                    else:
+                        logger.error("Cannot prune further. Analysis too complex for available context window.")
+                        raise
+                else:
+                    logger.error(f"Bad request error: {e}")
+                    raise
 
             except anthropic.APIError as e:
                 logger.error(f"Anthropic API error: {e}")

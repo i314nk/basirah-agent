@@ -10,6 +10,7 @@ Usage:
 import streamlit as st
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # Add project root to path
@@ -159,11 +160,23 @@ def main():
                 help="Number of years to include in multi-year analysis. More years = longer analysis time and deeper trend insights."
             )
 
+            # Calculate fiscal years dynamically
+            current_calendar_year = datetime.now().year
+            most_recent_fiscal_year = current_calendar_year - 1  # Most recent complete FY with 10-K
+            oldest_fiscal_year = most_recent_fiscal_year - (years_to_analyze - 1)
+
+            # Build year range display
+            if years_to_analyze == 1:
+                year_range = f"FY {most_recent_fiscal_year}"
+            else:
+                year_range = f"FY {oldest_fiscal_year}-{most_recent_fiscal_year}"
+
             st.info(
                 f"**Selected:** {years_to_analyze} year{'s' if years_to_analyze > 1 else ''}\n\n"
                 f"**Analysis includes:**\n"
-                f"- Current year: 2024\n"
+                f"- Most recent fiscal year: {most_recent_fiscal_year} (latest 10-K available)\n"
                 f"- Prior years: {years_to_analyze-1} year{'s' if years_to_analyze > 1 else ''}\n"
+                f"- Year range: {year_range}\n"
                 f"- Total: {years_to_analyze} year{'s' if years_to_analyze > 1 else ''} analyzed\n\n"
                 f"**Estimated time:** ~{2 + (years_to_analyze-1)*2}-{3 + (years_to_analyze-1)*2} minutes\n"
                 f"**Estimated cost:** ~${1.5 + (years_to_analyze-1)*0.5:.2f}"
@@ -349,30 +362,54 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         # Start analysis
         start_time = time.time()
 
-        with progress_container:
-            with st.spinner(f"Warren Buffett AI is analyzing {ticker}..."):
-                # Show status updates
-                if deep_dive:
-                    status_container.info(
-                        f"📖 **Stage 1:** Reading current year 10-K (200+ pages)...\n\n"
-                        f"Analyzing {years_to_analyze} years total. This may take 2-3 minutes per year."
-                    )
+        # Create progress tracking containers
+        progress_bar = None
+        status_text = None
 
-                # Run analysis
-                result = agent.analyze_company(
-                    ticker,
-                    deep_dive=deep_dive,
-                    years_to_analyze=years_to_analyze if deep_dive else 1
+        # Define progress callback to update UI in real-time
+        def update_progress(progress_info: dict):
+            """Update Streamlit UI with current progress."""
+            nonlocal progress_bar, status_text
+
+            stage = progress_info.get("stage", "")
+            progress = progress_info.get("progress", 0.0)
+            message = progress_info.get("message", "")
+
+            # Create progress bar and status on first call
+            if progress_bar is None:
+                with progress_container:
+                    progress_bar = st.progress(0.0)
+                    status_text = st.empty()
+
+            # Update progress bar and message
+            progress_bar.progress(progress)
+            status_text.info(f"{message}\n\nProgress: {progress*100:.0f}%")
+
+        with progress_container:
+            # Show initial status
+            if deep_dive:
+                st.info(
+                    f"🚀 Starting Deep Dive Analysis on {ticker}\n\n"
+                    f"Analyzing {years_to_analyze} year{'s' if years_to_analyze > 1 else ''} total. "
+                    f"This may take 2-3 minutes per year."
                 )
 
-                # Calculate duration
-                duration = time.time() - start_time
+            # Run analysis with progress callback
+            result = agent.analyze_company(
+                ticker,
+                deep_dive=deep_dive,
+                years_to_analyze=years_to_analyze if deep_dive else 1,
+                progress_callback=update_progress if deep_dive else None
+            )
 
-                # Add duration to metadata if not present
-                if 'analysis_duration_seconds' not in result.get('metadata', {}):
-                    if 'metadata' not in result:
-                        result['metadata'] = {}
-                    result['metadata']['analysis_duration_seconds'] = duration
+        # Calculate duration
+        duration = time.time() - start_time
+
+        # Add duration to metadata if not present
+        if 'analysis_duration_seconds' not in result.get('metadata', {}):
+            if 'metadata' not in result:
+                result['metadata'] = {}
+            result['metadata']['analysis_duration_seconds'] = duration
 
         # Clear progress indicators
         progress_container.empty()
@@ -395,6 +432,11 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
         # (Results will be displayed automatically by main() after rerun)
         st.session_state['last_result'] = result
         st.session_state['last_analysis_type'] = 'deep_dive' if deep_dive else 'quick'
+
+        # Add analysis_type to metadata for proper storage classification
+        if 'metadata' not in result:
+            result['metadata'] = {}
+        result['metadata']['analysis_type'] = 'deep_dive' if deep_dive else 'quick'
 
         # Auto-save to history
         storage = st.session_state.get('analysis_storage')
