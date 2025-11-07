@@ -5,6 +5,13 @@ python-dotenv>=1.0.0
 pydantic>=2.0.0
 psycopg2-binary>=2.9.9  # PostgreSQL database adapter
 
+# HTML/XML Parsing
+beautifulsoup4>=4.12.0  # For SEC filing HTML parsing
+lxml>=4.9.0  # Fast XML/HTML parser
+
+# LLM Providers
+ollama>=0.4.0  # For Ollama local/cloud models
+
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0

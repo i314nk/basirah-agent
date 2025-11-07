@@ -1,0 +1,1938 @@
+# BUILDER PROMPT: Phase 7 - Plug-and-Play LLM System
+
+**Project:** basīrah Warren Buffett AI Agent
+**Phase:** 7 - Multi-LLM Abstraction Layer
+**Priority:** HIGH (Flexibility & Cost Control)
+**Estimated Time:** 2-3 hours
+
+---
+
+## OVERVIEW
+
+Phase 7 implements a plug-and-play LLM system that allows seamless switching between different language models (Claude, Ollama local, Ollama cloud, OpenAI, etc.) via configuration only - no code changes required.
+
+**Key Goals:**
+1. **Configuration-driven** - Switch models via environment variables
+2. **Unified Interface** - Same API for all LLM providers
+3. **Cost Tracking** - Track usage across all providers
+4. **Future-proof** - Easy to add new providers (GPT-5, Gemini, etc.)
+5. **User Choice** - Eventually let users select their preferred LLM
+6. **Fallback Support** - Automatic fallback to alternate models on failure
+
+**Current Context:**
+- User is in testing phase
+- Wants to use Claude (best quality for realistic tests)
+- Needs flexibility to switch to Ollama for cheaper iteration
+- May offer users LLM choice in future
+
+---
+
+## ARCHITECTURE
+
+```
+basīrah Application Architecture (Phase 7)
+
+┌────────────────────────────────────────────────────┐
+│              Application Layer                      │
+│  ┌──────────────┐  ┌─────────────────┐            │
+│  │BuffettAgent  │  │ ShariaScreener  │            │
+│  │              │  │                 │            │
+│  └──────┬───────┘  └────────┬────────┘            │
+│         │                   │                      │
+│         └───────────┬───────┘                      │
+└─────────────────────┼──────────────────────────────┘
+                      │
+                      ▼
+┌────────────────────────────────────────────────────┐
+│          LLM Abstraction Layer (NEW)               │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐  │
+│  │           LLMFactory                        │  │
+│  │  • Provider selection                       │  │
+│  │  • Model configuration                      │  │
+│  │  • Cost tracking                            │  │
+│  │  • Error handling                           │  │
+│  └─────────────────────────────────────────────┘  │
+│                      │                             │
+│        ┌─────────────┼─────────────┬──────────┐   │
+│        ▼             ▼             ▼          ▼   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐│
+│  │ Claude   │ │  Ollama  │ │ OpenAI   │ │Future ││
+│  │ Provider │ │ Provider │ │ Provider │ │ ...   ││
+│  └──────────┘ └──────────┘ └──────────┘ └───────┘│
+└────────────────────────────────────────────────────┘
+         │              │              │          
+         ▼              ▼              ▼          
+┌─────────────┐  ┌──────────┐  ┌──────────┐
+│ Anthropic   │  │ Ollama   │  │ OpenAI   │
+│ API         │  │ Local/   │  │ API      │
+│             │  │ Cloud    │  │          │
+└─────────────┘  └──────────┘  └──────────┘
+```
+
+**Design Principles:**
+1. **Single Responsibility** - Each provider handles only its LLM
+2. **Open/Closed** - Open for extension, closed for modification
+3. **Dependency Inversion** - Application depends on abstraction, not concrete implementations
+4. **Configuration over Code** - All switching via config files
+
+---
+
+## FILE STRUCTURE
+
+### New Files (8)
+
+```
+src/llm/
+├── __init__.py                 # Package initialization
+├── base.py                     # Base LLM provider interface
+├── factory.py                  # LLM factory for provider selection
+├── providers/
+│   ├── __init__.py
+│   ├── claude.py               # Claude (Anthropic) provider
+│   ├── ollama_local.py         # Ollama local provider
+│   ├── ollama_cloud.py         # Ollama cloud provider
+│   └── openai.py               # OpenAI provider (future)
+└── config.py                   # LLM configuration management
+
+docs/architecture/
+└── llm_system.md               # LLM system architecture (NEW)
+```
+
+### Files to Update (4)
+
+```
+src/agent/buffett_agent.py     # Use LLMFactory instead of direct Anthropic
+src/agent/sharia_screener.py   # Use LLMFactory instead of direct Anthropic
+.env.example                    # Add LLM configuration
+docs/architecture/overview.md  # Update with LLM layer
+```
+
+---
+
+## IMPLEMENTATION
+
+### File 1: Base LLM Provider Interface
+
+**File:** Create new file `src/llm/base.py`
+
+```python
+"""
+Base interface for LLM providers.
+
+All LLM providers must implement this interface to ensure compatibility
+with basīrah's agents.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass
+from enum import Enum
+
+
+class LLMProvider(str, Enum):
+    """Available LLM providers."""
+    CLAUDE = "claude"
+    OLLAMA_LOCAL = "ollama_local"
+    OLLAMA_CLOUD = "ollama_cloud"
+    OPENAI = "openai"
+
+
+@dataclass
+class LLMMessage:
+    """Standard message format for all LLMs."""
+    role: str  # "system", "user", "assistant"
+    content: str
+
+
+@dataclass
+class LLMResponse:
+    """Standard response format from all LLMs."""
+    content: str
+    model: str
+    provider: str
+    tokens_input: int
+    tokens_output: int
+    cost: float
+    metadata: Dict[str, Any]
+
+
+class BaseLLMProvider(ABC):
+    """
+    Abstract base class for LLM providers.
+    
+    All concrete providers must implement these methods to ensure
+    consistent behavior across different LLMs.
+    """
+    
+    def __init__(self, model_name: str, **kwargs):
+        """
+        Initialize provider.
+        
+        Args:
+            model_name: Name/ID of the model to use
+            **kwargs: Provider-specific configuration
+        """
+        self.model_name = model_name
+        self.config = kwargs
+    
+    @abstractmethod
+    def generate(
+        self,
+        messages: List[LLMMessage],
+        max_tokens: int = 16000,
+        temperature: float = 1.0,
+        **kwargs
+    ) -> LLMResponse:
+        """
+        Generate response from LLM.
+        
+        Args:
+            messages: List of conversation messages
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0-1)
+            **kwargs: Provider-specific parameters
+            
+        Returns:
+            LLMResponse with generated content and metadata
+        """
+        pass
+    
+    @abstractmethod
+    def is_available(self) -> bool:
+        """
+        Check if provider is available and properly configured.
+        
+        Returns:
+            True if provider can be used, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    def get_cost_per_token(self) -> Dict[str, float]:
+        """
+        Get cost per token for this provider/model.
+        
+        Returns:
+            Dict with 'input' and 'output' cost per token
+        """
+        pass
+    
+    def calculate_cost(self, tokens_input: int, tokens_output: int) -> float:
+        """
+        Calculate cost for token usage.
+        
+        Args:
+            tokens_input: Number of input tokens
+            tokens_output: Number of output tokens
+            
+        Returns:
+            Total cost in USD
+        """
+        costs = self.get_cost_per_token()
+        return (tokens_input * costs['input']) + (tokens_output * costs['output'])
+    
+    @property
+    def provider_name(self) -> str:
+        """Get provider name."""
+        return self.__class__.__name__.replace("Provider", "")
+
+
+__all__ = [
+    "BaseLLMProvider",
+    "LLMProvider",
+    "LLMMessage",
+    "LLMResponse"
+]
+```
+
+---
+
+### File 2: Claude Provider
+
+**File:** Create new file `src/llm/providers/claude.py`
+
+```python
+"""
+Claude (Anthropic) LLM provider.
+"""
+
+import os
+import logging
+from typing import List, Dict, Any
+from anthropic import Anthropic
+
+from src.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
+
+logger = logging.getLogger(__name__)
+
+
+class ClaudeProvider(BaseLLMProvider):
+    """
+    Provider for Claude models via Anthropic API.
+    
+    Supported models:
+    - claude-sonnet-4-20250514 (Claude 4 Sonnet)
+    - claude-3-5-sonnet-20241022 (Claude 3.5 Sonnet)
+    - claude-3-opus-20240229 (Claude 3 Opus)
+    """
+    
+    # Model name mappings
+    MODEL_ALIASES = {
+        "claude-sonnet-4.5": "claude-sonnet-4-20250514",
+        "claude-4-sonnet": "claude-sonnet-4-20250514",
+        "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+        "claude-3-opus": "claude-3-opus-20240229"
+    }
+    
+    # Cost per 1M tokens (as of Nov 2025)
+    COSTS = {
+        "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
+        "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
+        "claude-3-opus-20240229": {"input": 15.0, "output": 75.0}
+    }
+    
+    def __init__(self, model_name: str, **kwargs):
+        """Initialize Claude provider."""
+        super().__init__(model_name, **kwargs)
+        
+        # Resolve model alias
+        self.model_id = self.MODEL_ALIASES.get(model_name, model_name)
+        
+        # Initialize Anthropic client
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        
+        self.client = Anthropic(api_key=api_key)
+        
+        logger.info(f"Initialized ClaudeProvider with model: {self.model_id}")
+    
+    def generate(
+        self,
+        messages: List[LLMMessage],
+        max_tokens: int = 16000,
+        temperature: float = 1.0,
+        **kwargs
+    ) -> LLMResponse:
+        """Generate response from Claude."""
+        
+        # Convert messages to Anthropic format
+        formatted_messages = []
+        system_prompt = None
+        
+        for msg in messages:
+            if msg.role == "system":
+                system_prompt = msg.content
+            else:
+                formatted_messages.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
+        
+        try:
+            # Call Anthropic API
+            response = self.client.messages.create(
+                model=self.model_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt if system_prompt else None,
+                messages=formatted_messages
+            )
+            
+            # Extract response
+            content = response.content[0].text
+            tokens_input = response.usage.input_tokens
+            tokens_output = response.usage.output_tokens
+            
+            # Calculate cost
+            cost = self.calculate_cost(tokens_input, tokens_output)
+            
+            return LLMResponse(
+                content=content,
+                model=self.model_id,
+                provider="claude",
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                cost=cost,
+                metadata={
+                    "stop_reason": response.stop_reason,
+                    "model_version": self.model_id
+                }
+            )
+        
+        except Exception as e:
+            logger.error(f"Claude API error: {e}")
+            raise
+    
+    def is_available(self) -> bool:
+        """Check if Claude API is available."""
+        try:
+            return bool(os.getenv("ANTHROPIC_API_KEY"))
+        except:
+            return False
+    
+    def get_cost_per_token(self) -> Dict[str, float]:
+        """Get cost per token for Claude model."""
+        costs = self.COSTS.get(
+            self.model_id,
+            {"input": 3.0, "output": 15.0}  # Default to Sonnet pricing
+        )
+        
+        # Convert from per 1M tokens to per token
+        return {
+            "input": costs["input"] / 1_000_000,
+            "output": costs["output"] / 1_000_000
+        }
+
+
+__all__ = ["ClaudeProvider"]
+```
+
+---
+
+### File 3: Ollama Local Provider
+
+**File:** Create new file `src/llm/providers/ollama_local.py`
+
+```python
+"""
+Ollama local LLM provider.
+"""
+
+import os
+import logging
+from typing import List, Dict, Any
+
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("ollama package not installed. Install with: pip install ollama")
+
+from src.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
+
+logger = logging.getLogger(__name__)
+
+
+class OllamaLocalProvider(BaseLLMProvider):
+    """
+    Provider for Ollama models running locally.
+    
+    Recommended models:
+    - deepseek-r1:8b-0528-qwen3 (Best for reasoning/financial analysis)
+    - qwen3:8b (Good general purpose)
+    - llama3.1:8b (Reliable alternative)
+    """
+    
+    # Recommended models with descriptions
+    RECOMMENDED_MODELS = {
+        "deepseek-r1:8b-0528-qwen3": "Best for financial reasoning (8B params)",
+        "deepseek-r1:7b": "Good reasoning, slightly smaller (7B params)",
+        "qwen3:8b": "Excellent general purpose (8B params)",
+        "qwen3:14b": "More capable, needs 16GB VRAM (14B params)",
+        "llama3.1:8b": "Reliable alternative (8B params)"
+    }
+    
+    def __init__(self, model_name: str, **kwargs):
+        """Initialize Ollama local provider."""
+        super().__init__(model_name, **kwargs)
+        
+        if not OLLAMA_AVAILABLE:
+            raise ImportError("ollama package not installed")
+        
+        self.model_id = model_name
+        self.host = kwargs.get("host", "http://localhost:11434")
+        
+        # Check if Ollama is running
+        if not self._check_ollama_running():
+            raise RuntimeError(
+                "Ollama is not running. Start it with: ollama serve"
+            )
+        
+        # Check if model is available
+        if not self._check_model_available():
+            logger.warning(
+                f"Model {model_name} not found locally. "
+                f"Pull it with: ollama pull {model_name}"
+            )
+        
+        logger.info(f"Initialized OllamaLocalProvider with model: {self.model_id}")
+    
+    def _check_ollama_running(self) -> bool:
+        """Check if Ollama service is running."""
+        try:
+            ollama.list()
+            return True
+        except Exception as e:
+            logger.error(f"Ollama not running: {e}")
+            return False
+    
+    def _check_model_available(self) -> bool:
+        """Check if model is pulled locally."""
+        try:
+            models = ollama.list()
+            return any(self.model_id in m.get("name", "") for m in models.get("models", []))
+        except:
+            return False
+    
+    def generate(
+        self,
+        messages: List[LLMMessage],
+        max_tokens: int = 16000,
+        temperature: float = 1.0,
+        **kwargs
+    ) -> LLMResponse:
+        """Generate response from Ollama local model."""
+        
+        # Convert messages to Ollama format
+        formatted_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+        ]
+        
+        try:
+            # Call Ollama API
+            response = ollama.chat(
+                model=self.model_id,
+                messages=formatted_messages,
+                options={
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                    **kwargs.get("options", {})
+                }
+            )
+            
+            # Extract response
+            content = response["message"]["content"]
+            tokens_input = response.get("prompt_eval_count", 0)
+            tokens_output = response.get("eval_count", 0)
+            
+            # Local models are free
+            cost = 0.0
+            
+            return LLMResponse(
+                content=content,
+                model=self.model_id,
+                provider="ollama_local",
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                cost=cost,
+                metadata={
+                    "total_duration": response.get("total_duration", 0),
+                    "load_duration": response.get("load_duration", 0),
+                    "eval_duration": response.get("eval_duration", 0)
+                }
+            )
+        
+        except Exception as e:
+            logger.error(f"Ollama local error: {e}")
+            raise
+    
+    def is_available(self) -> bool:
+        """Check if Ollama local is available."""
+        return OLLAMA_AVAILABLE and self._check_ollama_running()
+    
+    def get_cost_per_token(self) -> Dict[str, float]:
+        """Get cost per token (free for local)."""
+        return {"input": 0.0, "output": 0.0}
+
+
+__all__ = ["OllamaLocalProvider"]
+```
+
+---
+
+### File 4: Ollama Cloud Provider
+
+**File:** Create new file `src/llm/providers/ollama_cloud.py`
+
+```python
+"""
+Ollama cloud LLM provider.
+"""
+
+import os
+import logging
+from typing import List, Dict, Any
+
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+
+from src.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
+
+logger = logging.getLogger(__name__)
+
+
+class OllamaCloudProvider(BaseLLMProvider):
+    """
+    Provider for Ollama cloud models.
+    
+    Cloud models:
+    - deepseek-v3.1:671b-cloud (Massive reasoning model)
+    - gpt-oss:120b-cloud (OpenAI's open model)
+    - qwen3:480b-cloud (Very large Qwen)
+    
+    Note: Currently in free preview. Will transition to paid.
+    """
+    
+    # Recommended cloud models
+    CLOUD_MODELS = {
+        "deepseek-v3.1:671b-cloud": "671B reasoning model (best quality)",
+        "gpt-oss:120b-cloud": "OpenAI's 120B open model",
+        "qwen3:480b-cloud": "480B Qwen model"
+    }
+    
+    def __init__(self, model_name: str, **kwargs):
+        """Initialize Ollama cloud provider."""
+        super().__init__(model_name, **kwargs)
+        
+        if not OLLAMA_AVAILABLE:
+            raise ImportError("ollama package not installed")
+        
+        self.model_id = model_name
+        
+        # Set API key for cloud
+        api_key = os.getenv("OLLAMA_API_KEY")
+        if not api_key:
+            logger.warning(
+                "OLLAMA_API_KEY not set. Cloud models require authentication. "
+                "Get your key from: https://ollama.com/account"
+            )
+        
+        logger.info(f"Initialized OllamaCloudProvider with model: {self.model_id}")
+    
+    def generate(
+        self,
+        messages: List[LLMMessage],
+        max_tokens: int = 16000,
+        temperature: float = 1.0,
+        **kwargs
+    ) -> LLMResponse:
+        """Generate response from Ollama cloud model."""
+        
+        # Convert messages to Ollama format
+        formatted_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+        ]
+        
+        try:
+            # Call Ollama cloud API
+            response = ollama.chat(
+                model=self.model_id,
+                messages=formatted_messages,
+                options={
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                    **kwargs.get("options", {})
+                }
+            )
+            
+            # Extract response
+            content = response["message"]["content"]
+            tokens_input = response.get("prompt_eval_count", 0)
+            tokens_output = response.get("eval_count", 0)
+            
+            # Currently free preview, but will be paid in future
+            # TODO: Update cost calculation when pricing announced
+            cost = 0.0
+            
+            return LLMResponse(
+                content=content,
+                model=self.model_id,
+                provider="ollama_cloud",
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                cost=cost,
+                metadata={
+                    "cloud": True,
+                    "preview": True  # Currently in preview
+                }
+            )
+        
+        except Exception as e:
+            logger.error(f"Ollama cloud error: {e}")
+            raise
+    
+    def is_available(self) -> bool:
+        """Check if Ollama cloud is available."""
+        return OLLAMA_AVAILABLE and bool(os.getenv("OLLAMA_API_KEY"))
+    
+    def get_cost_per_token(self) -> Dict[str, float]:
+        """Get cost per token (currently free preview)."""
+        # TODO: Update when pricing is announced
+        return {"input": 0.0, "output": 0.0}
+
+
+__all__ = ["OllamaCloudProvider"]
+```
+
+---
+
+### File 5: LLM Configuration
+
+**File:** Create new file `src/llm/config.py`
+
+```python
+"""
+LLM configuration management.
+"""
+
+import os
+from typing import Dict, Any, Optional
+from enum import Enum
+
+from src.llm.base import LLMProvider
+
+
+class LLMConfig:
+    """
+    Centralized LLM configuration.
+    
+    Reads from environment variables and provides defaults.
+    """
+    
+    # Model configurations
+    MODELS = {
+        # Claude models (Anthropic)
+        "claude-sonnet-4.5": {
+            "provider": LLMProvider.CLAUDE,
+            "model_id": "claude-sonnet-4-20250514",
+            "description": "Claude 4 Sonnet - Best quality, realistic tests",
+            "cost": "$$$ (High)",
+            "speed": "Fast",
+            "quality": "Excellent (95%)"
+        },
+        "claude-3.5-sonnet": {
+            "provider": LLMProvider.CLAUDE,
+            "model_id": "claude-3-5-sonnet-20241022",
+            "description": "Claude 3.5 Sonnet - Previous generation",
+            "cost": "$$$ (High)",
+            "speed": "Fast",
+            "quality": "Excellent (92%)"
+        },
+        
+        # Ollama local models
+        "deepseek-r1-8b": {
+            "provider": LLMProvider.OLLAMA_LOCAL,
+            "model_id": "deepseek-r1:8b-0528-qwen3",
+            "description": "DeepSeek R1 8B - Best for reasoning, FREE",
+            "cost": "FREE",
+            "speed": "Fast (local GPU)",
+            "quality": "Very Good (75%)",
+            "recommended": True
+        },
+        "qwen3-8b": {
+            "provider": LLMProvider.OLLAMA_LOCAL,
+            "model_id": "qwen3:8b",
+            "description": "Qwen3 8B - General purpose, FREE",
+            "cost": "FREE",
+            "speed": "Fast (local GPU)",
+            "quality": "Good (70%)"
+        },
+        "llama3.1-8b": {
+            "provider": LLMProvider.OLLAMA_LOCAL,
+            "model_id": "llama3.1:8b",
+            "description": "Llama 3.1 8B - Reliable, FREE",
+            "cost": "FREE",
+            "speed": "Fast (local GPU)",
+            "quality": "Good (65%)"
+        },
+        
+        # Ollama cloud models
+        "deepseek-cloud": {
+            "provider": LLMProvider.OLLAMA_CLOUD,
+            "model_id": "deepseek-v3.1:671b-cloud",
+            "description": "DeepSeek V3.1 671B - Cloud, FREE preview",
+            "cost": "FREE (preview)",
+            "speed": "Very Fast (datacenter)",
+            "quality": "Excellent (90%)"
+        },
+        "gpt-oss-cloud": {
+            "provider": LLMProvider.OLLAMA_CLOUD,
+            "model_id": "gpt-oss:120b-cloud",
+            "description": "GPT-OSS 120B - Cloud, FREE preview",
+            "cost": "FREE (preview)",
+            "speed": "Very Fast (datacenter)",
+            "quality": "Very Good (85%)"
+        }
+    }
+    
+    @classmethod
+    def get_default_model(cls) -> str:
+        """Get default model from environment or fallback."""
+        return os.getenv("LLM_MODEL", "claude-sonnet-4.5")
+    
+    @classmethod
+    def get_model_config(cls, model_key: str) -> Dict[str, Any]:
+        """Get configuration for a model."""
+        if model_key not in cls.MODELS:
+            raise ValueError(f"Unknown model: {model_key}. Available: {list(cls.MODELS.keys())}")
+        return cls.MODELS[model_key]
+    
+    @classmethod
+    def get_fallback_models(cls, provider: LLMProvider) -> list:
+        """Get fallback models for a provider."""
+        fallbacks = {
+            LLMProvider.CLAUDE: ["claude-sonnet-4.5", "claude-3.5-sonnet"],
+            LLMProvider.OLLAMA_LOCAL: ["deepseek-r1-8b", "qwen3-8b", "llama3.1-8b"],
+            LLMProvider.OLLAMA_CLOUD: ["deepseek-cloud", "gpt-oss-cloud"]
+        }
+        return fallbacks.get(provider, [])
+    
+    @classmethod
+    def list_available_models(cls) -> Dict[str, Dict[str, Any]]:
+        """List all available models with their configurations."""
+        return cls.MODELS
+    
+    @classmethod
+    def get_recommended_models(cls) -> list:
+        """Get list of recommended models."""
+        return [
+            key for key, config in cls.MODELS.items()
+            if config.get("recommended", False)
+        ]
+
+
+__all__ = ["LLMConfig"]
+```
+
+---
+
+### File 6: LLM Factory
+
+**File:** Create new file `src/llm/factory.py`
+
+```python
+"""
+LLM Factory for creating and managing LLM providers.
+"""
+
+import os
+import logging
+from typing import Optional, Dict, Any, List
+
+from src.llm.base import BaseLLMProvider, LLMProvider, LLMMessage, LLMResponse
+from src.llm.config import LLMConfig
+from src.llm.providers.claude import ClaudeProvider
+from src.llm.providers.ollama_local import OllamaLocalProvider
+from src.llm.providers.ollama_cloud import OllamaCloudProvider
+
+logger = logging.getLogger(__name__)
+
+
+class LLMFactory:
+    """
+    Factory for creating LLM provider instances.
+    
+    Handles provider selection, initialization, and fallback logic.
+    """
+    
+    # Provider class mapping
+    PROVIDER_CLASSES = {
+        LLMProvider.CLAUDE: ClaudeProvider,
+        LLMProvider.OLLAMA_LOCAL: OllamaLocalProvider,
+        LLMProvider.OLLAMA_CLOUD: OllamaCloudProvider
+    }
+    
+    @classmethod
+    def create_provider(
+        cls,
+        model_key: Optional[str] = None,
+        **kwargs
+    ) -> BaseLLMProvider:
+        """
+        Create LLM provider instance.
+        
+        Args:
+            model_key: Model key from LLMConfig (e.g., "claude-sonnet-4.5")
+            **kwargs: Additional provider-specific configuration
+            
+        Returns:
+            Initialized LLM provider
+            
+        Raises:
+            ValueError: If model not found
+            RuntimeError: If provider initialization fails
+        """
+        # Get model key from env if not provided
+        if model_key is None:
+            model_key = LLMConfig.get_default_model()
+        
+        logger.info(f"Creating LLM provider for model: {model_key}")
+        
+        # Get model configuration
+        try:
+            model_config = LLMConfig.get_model_config(model_key)
+        except ValueError as e:
+            logger.error(f"Invalid model key: {model_key}")
+            raise
+        
+        # Get provider class
+        provider_type = model_config["provider"]
+        provider_class = cls.PROVIDER_CLASSES.get(provider_type)
+        
+        if not provider_class:
+            raise ValueError(f"Unknown provider type: {provider_type}")
+        
+        # Initialize provider
+        try:
+            model_id = model_config["model_id"]
+            provider = provider_class(model_id, **kwargs)
+            
+            # Check if provider is available
+            if not provider.is_available():
+                raise RuntimeError(
+                    f"Provider {provider_type} not available. "
+                    f"Check configuration and dependencies."
+                )
+            
+            logger.info(
+                f"Successfully created {provider_type} provider "
+                f"with model {model_id}"
+            )
+            
+            return provider
+        
+        except Exception as e:
+            logger.error(f"Failed to create provider: {e}")
+            raise
+    
+    @classmethod
+    def create_with_fallback(
+        cls,
+        primary_model: str,
+        fallback_models: Optional[List[str]] = None,
+        **kwargs
+    ) -> BaseLLMProvider:
+        """
+        Create provider with automatic fallback.
+        
+        Tries primary model first, falls back to alternatives if unavailable.
+        
+        Args:
+            primary_model: Primary model to try
+            fallback_models: List of fallback models (optional)
+            **kwargs: Provider configuration
+            
+        Returns:
+            First available provider
+        """
+        models_to_try = [primary_model]
+        
+        if fallback_models:
+            models_to_try.extend(fallback_models)
+        
+        last_error = None
+        
+        for model_key in models_to_try:
+            try:
+                logger.info(f"Attempting to create provider for: {model_key}")
+                return cls.create_provider(model_key, **kwargs)
+            except Exception as e:
+                logger.warning(f"Failed to create {model_key}: {e}")
+                last_error = e
+                continue
+        
+        # All providers failed
+        raise RuntimeError(
+            f"Failed to create any provider. Tried: {models_to_try}. "
+            f"Last error: {last_error}"
+        )
+    
+    @classmethod
+    def get_available_providers(cls) -> List[str]:
+        """
+        Get list of currently available providers.
+        
+        Returns:
+            List of model keys that are available
+        """
+        available = []
+        
+        for model_key in LLMConfig.MODELS.keys():
+            try:
+                provider = cls.create_provider(model_key)
+                if provider.is_available():
+                    available.append(model_key)
+            except:
+                continue
+        
+        return available
+
+
+class LLMClient:
+    """
+    High-level LLM client with automatic provider management.
+    
+    This is the main interface that basīrah agents should use.
+    """
+    
+    def __init__(self, model_key: Optional[str] = None, **kwargs):
+        """
+        Initialize LLM client.
+        
+        Args:
+            model_key: Model to use (defaults to LLM_MODEL env var)
+            **kwargs: Provider configuration
+        """
+        self.model_key = model_key or LLMConfig.get_default_model()
+        self.provider = LLMFactory.create_provider(self.model_key, **kwargs)
+        
+        logger.info(f"LLMClient initialized with {self.model_key}")
+    
+    def generate(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 16000,
+        temperature: float = 1.0,
+        **kwargs
+    ) -> LLMResponse:
+        """
+        Generate response from LLM.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional provider-specific parameters
+            
+        Returns:
+            LLMResponse with generated content
+        """
+        # Convert dict messages to LLMMessage objects
+        llm_messages = [
+            LLMMessage(role=msg["role"], content=msg["content"])
+            for msg in messages
+        ]
+        
+        return self.provider.generate(
+            llm_messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs
+        )
+    
+    def get_provider_info(self) -> Dict[str, Any]:
+        """Get information about current provider."""
+        config = LLMConfig.get_model_config(self.model_key)
+        return {
+            "model_key": self.model_key,
+            "provider": self.provider.provider_name,
+            "model_id": self.provider.model_name,
+            "description": config.get("description"),
+            "cost": config.get("cost"),
+            "quality": config.get("quality")
+        }
+
+
+__all__ = ["LLMFactory", "LLMClient"]
+```
+
+---
+
+### File 7: Package Initialization
+
+**File:** Create new file `src/llm/__init__.py`
+
+```python
+"""
+LLM abstraction layer for basīrah.
+
+Provides unified interface for multiple LLM providers.
+"""
+
+from src.llm.base import (
+    BaseLLMProvider,
+    LLMProvider,
+    LLMMessage,
+    LLMResponse
+)
+from src.llm.config import LLMConfig
+from src.llm.factory import LLMFactory, LLMClient
+
+__all__ = [
+    "BaseLLMProvider",
+    "LLMProvider",
+    "LLMMessage",
+    "LLMResponse",
+    "LLMConfig",
+    "LLMFactory",
+    "LLMClient"
+]
+```
+
+---
+
+### File 8: Provider Package Init
+
+**File:** Create new file `src/llm/providers/__init__.py`
+
+```python
+"""LLM provider implementations."""
+
+from src.llm.providers.claude import ClaudeProvider
+from src.llm.providers.ollama_local import OllamaLocalProvider
+from src.llm.providers.ollama_cloud import OllamaCloudProvider
+
+__all__ = [
+    "ClaudeProvider",
+    "OllamaLocalProvider",
+    "OllamaCloudProvider"
+]
+```
+
+---
+
+## INTEGRATION WITH EXISTING CODE
+
+### Update: BuffettAgent
+
+**File:** Modify `src/agent/buffett_agent.py`
+
+**Changes needed:**
+
+1. **Replace Anthropic import:**
+```python
+# OLD
+from anthropic import Anthropic
+
+# NEW
+from src.llm import LLMClient
+```
+
+2. **Update initialization:**
+```python
+# OLD
+def __init__(self):
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    self.client = Anthropic(api_key=api_key)
+
+# NEW
+def __init__(self, model_key: str = None):
+    """
+    Initialize Buffett Agent.
+    
+    Args:
+        model_key: LLM model to use (defaults to env var LLM_MODEL)
+    """
+    self.llm = LLMClient(model_key=model_key)
+```
+
+3. **Update API calls:**
+```python
+# OLD
+response = self.client.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=16000,
+    messages=[...]
+)
+content = response.content[0].text
+tokens = response.usage.input_tokens
+
+# NEW
+response = self.llm.generate(
+    messages=[
+        {"role": "user", "content": "..."}
+    ],
+    max_tokens=16000
+)
+content = response.content
+tokens = response.tokens_input
+cost = response.cost
+```
+
+**Example full method update:**
+
+```python
+def analyze_company(
+    self,
+    ticker: str,
+    deep_dive: bool = True,
+    years_to_analyze: int = 5
+) -> Dict[str, Any]:
+    """
+    Analyze company using Warren Buffett's framework.
+    
+    Args:
+        ticker: Stock ticker symbol
+        deep_dive: Whether to do deep dive or quick screen
+        years_to_analyze: Years of history to analyze
+        
+    Returns:
+        Analysis result dictionary
+    """
+    # ... existing data gathering code ...
+    
+    # Generate analysis using LLM
+    response = self.llm.generate(
+        messages=[
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=16000,
+        temperature=1.0
+    )
+    
+    # Extract results
+    analysis = response.content
+    
+    # Build result dictionary
+    result = {
+        "ticker": ticker,
+        "analysis": analysis,
+        "metadata": {
+            "model": response.model,
+            "provider": response.provider,
+            "token_usage": {
+                "input_tokens": response.tokens_input,
+                "output_tokens": response.tokens_output,
+                "total_cost": response.cost
+            },
+            "analysis_duration_seconds": duration
+        }
+    }
+    
+    return result
+```
+
+### Update: ShariaScreener
+
+**File:** Modify `src/agent/sharia_screener.py`
+
+Apply same changes as BuffettAgent:
+1. Replace Anthropic import with LLMClient
+2. Update initialization
+3. Update API calls
+
+---
+
+## ENVIRONMENT CONFIGURATION
+
+### Update: .env.example
+
+**File:** Modify `.env.example`
+
+```bash
+# ============================================
+# LLM Configuration
+# ============================================
+
+# Primary LLM Model
+# Options:
+#   - claude-sonnet-4.5 (Best quality, expensive)
+#   - claude-3.5-sonnet (Good quality, expensive)
+#   - deepseek-r1-8b (Good quality, FREE local)
+#   - qwen3-8b (Good quality, FREE local)
+#   - deepseek-cloud (Excellent quality, FREE preview)
+LLM_MODEL=claude-sonnet-4.5
+
+# ============================================
+# Provider API Keys
+# ============================================
+
+# Anthropic (Claude)
+ANTHROPIC_API_KEY=your_anthropic_key_here
+
+# Ollama Cloud (optional)
+# Get from: https://ollama.com/account
+OLLAMA_API_KEY=your_ollama_key_here
+
+# OpenAI (future - optional)
+# OPENAI_API_KEY=your_openai_key_here
+
+# ============================================
+# Ollama Local Configuration (optional)
+# ============================================
+
+# Ollama host (default: http://localhost:11434)
+OLLAMA_HOST=http://localhost:11434
+
+# ============================================
+# Other Configuration
+# ============================================
+
+# GuruFocus API
+GURUFOCUS_API_KEY=your_gurufocus_key_here
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=basirah
+DB_USER=basirah_user
+DB_PASSWORD=basirah_secure_password_2025
+```
+
+---
+
+## DOCUMENTATION UPDATES
+
+### Create: LLM System Architecture
+
+**File:** Create new file `docs/architecture/llm_system.md`
+
+```markdown
+# LLM System Architecture
+
+## Overview
+
+basīrah uses a plug-and-play LLM abstraction layer that allows seamless switching between different language model providers without code changes.
+
+## Architecture
+
+```
+Application Layer (Agents)
+         ↓
+   LLMClient (Unified Interface)
+         ↓
+    LLMFactory (Provider Selection)
+         ↓
+   BaseLLMProvider (Abstract Interface)
+         ↓
+    ┌────┴────┬──────────┬──────────┐
+    ↓         ↓          ↓          ↓
+  Claude   Ollama    Ollama     OpenAI
+          Local     Cloud      (Future)
+```
+
+## Components
+
+### 1. BaseLLMProvider (Abstract Interface)
+- Defines standard interface all providers must implement
+- Methods: `generate()`, `is_available()`, `get_cost_per_token()`
+- Ensures consistent behavior across providers
+
+### 2. Concrete Providers
+- **ClaudeProvider**: Anthropic's Claude models
+- **OllamaLocalProvider**: Local Ollama models
+- **OllamaCloudProvider**: Ollama cloud models
+- **OpenAIProvider**: OpenAI models (future)
+
+### 3. LLMFactory
+- Creates provider instances based on configuration
+- Handles fallback logic if primary provider unavailable
+- Manages provider lifecycle
+
+### 4. LLMClient
+- High-level interface for application code
+- Simplifies provider usage
+- Provides consistent API
+
+### 5. LLMConfig
+- Centralized configuration management
+- Model definitions and metadata
+- Environment variable handling
+
+## Configuration
+
+Models are selected via environment variable:
+
+```bash
+# Use Claude (best quality)
+LLM_MODEL=claude-sonnet-4.5
+
+# Use Ollama local (free, good quality)
+LLM_MODEL=deepseek-r1-8b
+
+# Use Ollama cloud (free preview, excellent quality)
+LLM_MODEL=deepseek-cloud
+```
+
+## Available Models
+
+### Production Models (Claude)
+- `claude-sonnet-4.5`: Best quality, $3-4 per analysis
+- `claude-3.5-sonnet`: Previous gen, $3-4 per analysis
+
+### Local Models (Ollama - FREE)
+- `deepseek-r1-8b`: Best for reasoning, FREE
+- `qwen3-8b`: General purpose, FREE
+- `llama3.1-8b`: Reliable alternative, FREE
+
+### Cloud Models (Ollama - FREE Preview)
+- `deepseek-cloud`: 671B model, excellent quality
+- `gpt-oss-cloud`: OpenAI's open model
+- `qwen3-cloud`: 480B Qwen model
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+from src.llm import LLMClient
+
+# Create client (uses LLM_MODEL from env)
+llm = LLMClient()
+
+# Generate response
+response = llm.generate(
+    messages=[
+        {"role": "system", "content": "You are a financial analyst"},
+        {"role": "user", "content": "Analyze Apple Inc."}
+    ],
+    max_tokens=4000
+)
+
+print(response.content)
+print(f"Cost: ${response.cost:.2f}")
+```
+
+### Specific Model
+
+```python
+# Use specific model
+llm = LLMClient(model_key="deepseek-r1-8b")
+
+response = llm.generate(messages=[...])
+```
+
+### Provider Info
+
+```python
+info = llm.get_provider_info()
+print(f"Using: {info['model_key']}")
+print(f"Provider: {info['provider']}")
+print(f"Cost: {info['cost']}")
+```
+
+## Cost Tracking
+
+All responses include cost information:
+
+```python
+response = llm.generate(messages=[...])
+
+print(f"Input tokens: {response.tokens_input}")
+print(f"Output tokens: {response.tokens_output}")
+print(f"Total cost: ${response.cost:.4f}")
+```
+
+## Adding New Providers
+
+To add a new provider (e.g., OpenAI):
+
+1. Create provider class in `src/llm/providers/openai.py`
+2. Inherit from `BaseLLMProvider`
+3. Implement required methods
+4. Add to `LLMFactory.PROVIDER_CLASSES`
+5. Add model configurations to `LLMConfig.MODELS`
+6. Update documentation
+
+## Best Practices
+
+1. **Always use LLMClient** - Don't instantiate providers directly
+2. **Use environment variables** - Configure via `.env` file
+3. **Track costs** - Monitor `response.cost` in production
+4. **Handle errors** - Providers may fail, implement fallbacks
+5. **Test with multiple models** - Ensure compatibility
+
+## Future Enhancements
+
+- [ ] OpenAI provider implementation
+- [ ] Google Gemini provider
+- [ ] Automatic provider selection based on task
+- [ ] Cost-based provider switching
+- [ ] Response caching
+- [ ] Provider health monitoring
+```
+
+### Update: Architecture Overview
+
+**File:** Modify `docs/architecture/overview.md`
+
+**Add section:**
+
+```markdown
+## LLM Abstraction Layer
+
+basīrah features a flexible LLM system that supports multiple language model providers:
+
+- **Claude (Anthropic)**: Production-quality models for realistic testing
+- **Ollama Local**: Free local models for development/testing
+- **Ollama Cloud**: Free cloud models (preview) for high-quality testing
+- **Extensible**: Easy to add new providers (OpenAI, Gemini, etc.)
+
+All providers share a unified interface, allowing seamless switching via configuration.
+
+See [LLM System Architecture](./llm_system.md) for details.
+```
+
+---
+
+## UI INTEGRATION
+
+### Update: Main App
+
+**File:** Modify `src/ui/app.py`
+
+**Add model selector to sidebar:**
+
+```python
+import streamlit as st
+from src.llm import LLMConfig, LLMFactory
+
+# In sidebar
+st.sidebar.divider()
+st.sidebar.markdown("### 🤖 LLM Configuration")
+
+# Get available models
+available_models = LLMFactory.get_available_providers()
+current_model = os.getenv("LLM_MODEL", "claude-sonnet-4.5")
+
+# Model selector
+if available_models:
+    selected_model = st.sidebar.selectbox(
+        "Select Model",
+        options=available_models,
+        index=available_models.index(current_model) if current_model in available_models else 0,
+        format_func=lambda x: LLMConfig.get_model_config(x)["description"]
+    )
+    
+    # Update environment
+    if selected_model != current_model:
+        os.environ["LLM_MODEL"] = selected_model
+        st.sidebar.success(f"✓ Switched to {selected_model}")
+    
+    # Show model info
+    model_info = LLMConfig.get_model_config(selected_model)
+    st.sidebar.caption(f"**Provider:** {model_info['provider'].value}")
+    st.sidebar.caption(f"**Cost:** {model_info['cost']}")
+    st.sidebar.caption(f"**Quality:** {model_info['quality']}")
+else:
+    st.sidebar.error("No LLM providers available")
+    st.sidebar.info("Install Ollama or set ANTHROPIC_API_KEY")
+```
+
+---
+
+## TESTING
+
+### Test 1: Provider Initialization
+
+**File:** Create new file `tests/test_llm_providers.py`
+
+```python
+"""Test LLM providers."""
+
+import pytest
+from src.llm import LLMFactory, LLMClient, LLMConfig
+
+
+def test_claude_provider():
+    """Test Claude provider initialization."""
+    try:
+        provider = LLMFactory.create_provider("claude-sonnet-4.5")
+        assert provider.is_available()
+        assert provider.provider_name == "Claude"
+    except Exception as e:
+        pytest.skip(f"Claude not available: {e}")
+
+
+def test_ollama_local_provider():
+    """Test Ollama local provider initialization."""
+    try:
+        provider = LLMFactory.create_provider("deepseek-r1-8b")
+        assert provider.is_available()
+        assert provider.provider_name == "OllamaLocal"
+    except Exception as e:
+        pytest.skip(f"Ollama local not available: {e}")
+
+
+def test_llm_client():
+    """Test LLMClient."""
+    client = LLMClient()
+    info = client.get_provider_info()
+    assert "model_key" in info
+    assert "provider" in info
+
+
+def test_model_config():
+    """Test model configuration."""
+    models = LLMConfig.list_available_models()
+    assert "claude-sonnet-4.5" in models
+    assert "deepseek-r1-8b" in models
+    
+    config = LLMConfig.get_model_config("claude-sonnet-4.5")
+    assert "provider" in config
+    assert "description" in config
+```
+
+### Test 2: Generation
+
+**File:** Create test script `test_llm_generation.py`
+
+```python
+"""Test LLM generation with different providers."""
+
+from src.llm import LLMClient
+
+# Test prompt
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is 2+2? Answer in one sentence."}
+]
+
+# Test each available model
+models_to_test = [
+    "claude-sonnet-4.5",
+    "deepseek-r1-8b",
+    "qwen3-8b"
+]
+
+for model_key in models_to_test:
+    print(f"\n{'='*60}")
+    print(f"Testing: {model_key}")
+    print('='*60)
+    
+    try:
+        llm = LLMClient(model_key=model_key)
+        
+        print("Generating response...")
+        response = llm.generate(messages, max_tokens=100)
+        
+        print(f"\nResponse: {response.content}")
+        print(f"\nTokens: {response.tokens_input} in, {response.tokens_output} out")
+        print(f"Cost: ${response.cost:.4f}")
+        print(f"Provider: {response.provider}")
+        print(f"Model: {response.model}")
+        
+        print("\n✅ Success!")
+    
+    except Exception as e:
+        print(f"\n❌ Failed: {e}")
+```
+
+Run with:
+```bash
+python test_llm_generation.py
+```
+
+### Test 3: Integration
+
+**Test with existing agents:**
+
+```bash
+# Set model to Ollama
+export LLM_MODEL=deepseek-r1-8b
+
+# Run analysis
+streamlit run src/ui/app.py
+
+# Test:
+# 1. Quick screen on AAPL
+# 2. Check cost ($0.00)
+# 3. Switch to Claude in UI
+# 4. Run same analysis
+# 5. Check cost ($1-2)
+# 6. Compare quality
+```
+
+---
+
+## INSTALLATION
+
+### Requirements
+
+**File:** Update `requirements.txt`
+
+```txt
+# Existing packages...
+
+# LLM Providers
+ollama>=0.4.0  # For Ollama local/cloud
+```
+
+### Install Ollama
+
+```bash
+# Download from: https://ollama.com/download
+# Or:
+
+# macOS
+brew install ollama
+
+# Linux
+curl https://ollama.ai/install.sh | sh
+
+# Windows
+# Download from website
+
+# Pull recommended model
+ollama pull deepseek-r1:8b-0528-qwen3
+```
+
+---
+
+## DEPLOYMENT CHECKLIST
+
+### Phase 7 Complete When:
+
+**Core Implementation:**
+- [ ] All provider classes created
+- [ ] LLMFactory working
+- [ ] LLMClient functional
+- [ ] Configuration system complete
+
+**Integration:**
+- [ ] BuffettAgent updated
+- [ ] ShariaScreener updated
+- [ ] All agents use LLMClient
+- [ ] No direct Anthropic imports
+
+**Configuration:**
+- [ ] .env.example updated
+- [ ] Model switching works
+- [ ] Environment variables read correctly
+
+**Testing:**
+- [ ] All providers test successfully
+- [ ] Generation works for each model
+- [ ] Cost tracking accurate
+- [ ] Fallback logic works
+
+**Documentation:**
+- [ ] LLM system docs created
+- [ ] Architecture overview updated
+- [ ] Usage examples documented
+- [ ] Migration guide written
+
+**UI:**
+- [ ] Model selector in sidebar
+- [ ] Provider info displayed
+- [ ] Switching works in real-time
+- [ ] No UI errors
+
+---
+
+## USAGE GUIDE
+
+### For Testing Phase (Current)
+
+**Recommended workflow:**
+
+```bash
+# 1. Start with Claude for realistic testing
+export LLM_MODEL=claude-sonnet-4.5
+
+# 2. Run test analysis
+# - Verify quality meets expectations
+# - Note cost
+
+# 3. Switch to Ollama for iteration
+export LLM_MODEL=deepseek-r1-8b
+
+# 4. Fix bugs/test features at $0 cost
+# - Same quality as testing
+# - Unlimited iterations
+
+# 5. Final verification with Claude
+export LLM_MODEL=claude-sonnet-4.5
+# - Ensure production quality
+# - Final checks before deploy
+```
+
+### For Production (Future)
+
+**Option 1: Fixed model**
+```bash
+# Use Claude for all users
+LLM_MODEL=claude-sonnet-4.5
+```
+
+**Option 2: User choice**
+```python
+# Let users select in UI
+selected_model = st.selectbox(
+    "Choose LLM",
+    ["claude-sonnet-4.5", "deepseek-r1-8b", "qwen3-8b"]
+)
+
+llm = LLMClient(model_key=selected_model)
+```
+
+**Option 3: Tiered access**
+```python
+# Free tier: Ollama
+# Premium tier: Claude
+if user.is_premium:
+    model = "claude-sonnet-4.5"
+else:
+    model = "deepseek-r1-8b"
+
+llm = LLMClient(model_key=model)
+```
+
+---
+
+## COST SAVINGS ESTIMATE
+
+### Current (Claude only)
+```
+Testing 100 companies:
+- 100 analyses × $3 = $300
+- Bug fixes (50 iterations) × $3 = $150
+- Feature testing (100 tests) × $3 = $300
+TOTAL: $750
+```
+
+### With Phase 7 (Hybrid)
+```
+Initial testing (10 companies, Claude):
+- 10 × $3 = $30
+
+Bug fixes (50 iterations, Ollama):
+- 50 × $0 = $0
+
+Feature testing (100 tests, Ollama):
+- 100 × $0 = $0
+
+Final verification (10 companies, Claude):
+- 10 × $3 = $30
+
+TOTAL: $60
+Savings: $690 (92%)! 🎉
+```
+
+---
+
+## MIGRATION GUIDE
+
+### Step-by-Step Migration
+
+1. **Install new dependencies**
+   ```bash
+   pip install ollama
+   ```
+
+2. **Create LLM directory structure**
+   ```bash
+   mkdir -p src/llm/providers
+   ```
+
+3. **Add all new files** (listed above)
+
+4. **Update BuffettAgent**
+   - Replace Anthropic imports
+   - Update initialization
+   - Update API calls
+
+5. **Update ShariaScreener**
+   - Same changes as BuffettAgent
+
+6. **Update .env**
+   - Add LLM_MODEL variable
+   - Add provider API keys
+
+7. **Test each provider**
+   ```bash
+   python test_llm_generation.py
+   ```
+
+8. **Test full workflow**
+   ```bash
+   streamlit run src/ui/app.py
+   ```
+
+9. **Update documentation**
+   - Create llm_system.md
+   - Update overview.md
+
+10. **Verify everything works**
+    - All tests pass
+    - UI works correctly
+    - Switching works seamlessly
+
+---
+
+## ESTIMATED TIMELINE
+
+| Task | Time |
+|------|------|
+| **Core Implementation** | |
+| - Base provider interface | 15 min |
+| - Claude provider | 20 min |
+| - Ollama local provider | 20 min |
+| - Ollama cloud provider | 15 min |
+| - Configuration system | 20 min |
+| - LLM factory | 30 min |
+| **Integration** | |
+| - Update BuffettAgent | 20 min |
+| - Update ShariaScreener | 15 min |
+| - Update UI | 15 min |
+| **Testing** | 30 min |
+| **Documentation** | 30 min |
+| **Total** | **~3.5 hours** |
+
+---
+
+## SUCCESS CRITERIA
+
+Phase 7 is complete when:
+
+✅ **Plug-and-play working** - Switch models via env var only
+✅ **All providers functional** - Claude, Ollama local, Ollama cloud
+✅ **Existing agents updated** - No direct Anthropic usage
+✅ **Cost tracking accurate** - Costs tracked for all providers
+✅ **Documentation complete** - Architecture and usage docs updated
+✅ **UI integration** - Model selector in sidebar
+✅ **Testing comprehensive** - All providers tested
+✅ **Zero regressions** - All existing features still work
+
+---
+
+## NOTES FOR BUILDER
+
+### Critical Requirements:
+
+1. **Do NOT break existing functionality**
+   - Agents must work exactly as before
+   - All features must remain functional
+   - No regression in analysis quality
+
+2. **Configuration-driven**
+   - NO hardcoded model names in agents
+   - ALL switching via environment variables
+   - Clean separation of concerns
+
+3. **Documentation updates REQUIRED**
+   - Create `docs/architecture/llm_system.md`
+   - Update `docs/architecture/overview.md`
+   - Include usage examples
+
+4. **Error handling**
+   - Graceful fallbacks if provider unavailable
+   - Clear error messages
+   - Helpful suggestions for fixing issues
+
+5. **Testing priority**
+   - Test each provider independently
+   - Test switching between providers
+   - Test full analysis workflow
+   - Verify cost tracking
+
+---
+
+## CONCLUSION
+
+Phase 7 creates a professional, extensible LLM system that:
+- ✅ Allows realistic testing with Claude
+- ✅ Enables cheap iteration with Ollama
+- ✅ Future-proofs for new models
+- ✅ Gives users eventual choice
+- ✅ Saves 90%+ on development costs
+
+**This is infrastructure that will pay dividends for years!**
+
+Ready for implementation! 🚀
+
+---
+
+*Phase 7: Plug-and-Play LLM System*
+*Estimated: 3.5 hours | Strategic Value: MASSIVE*
+*Status: Ready for Implementation*

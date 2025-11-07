@@ -12,9 +12,11 @@ This document provides a high-level summary of the critical bug fixes implemente
 
 1. **Extended Thinking Format Violation**
    - **Error:** `400 - messages.1.content.0.type: Expected 'thinking'`
-   - **Impact:** 10-year analyses crashed at 233K tokens
-   - **Fix:** Removed summary message from context pruning
-   - **Status:** ✅ Fixed
+   - **Impact:** Deep Dive analyses crashed during context pruning
+   - **Fix:** Backwards search algorithm to preserve thinking blocks during pruning
+   - **Status:** ✅ Fixed (2025-11-06)
+   - **Additional Fix:** Increased MAX_TOKENS from 12K to 20K for complete thesis generation
+   - **Documentation:** [EXTENDED_THINKING_FIX.md](./EXTENDED_THINKING_FIX.md)
 
 2. **Context Window Overflow**
    - **Error:** `prompt is too long: 202488 tokens > 200000`
@@ -115,11 +117,13 @@ No code changes required on your end - all fixes are backward compatible.
 ## Files Modified
 
 ### Core Agent
-- `src/agent/buffett_agent.py` (150 lines modified/added)
-  - Context management
+- `src/agent/buffett_agent.py` (200+ lines modified/added)
+  - Context management with Extended Thinking preservation
+  - Backwards search algorithm for thinking blocks
   - Progress reporting
   - Missing years tracking
   - Dynamic fiscal year calculation
+  - Increased MAX_TOKENS from 12K to 20K
 
 ### User Interface
 - `src/ui/app.py` (30 lines modified)
@@ -172,6 +176,7 @@ The agent reads every 10-K completely, extracts insights, and prunes only the ra
 
 **Detailed Documentation:**
 - [Full Bug Fix Report](./2025-11-06_multi_year_analysis_fixes.md) - 3000+ lines
+- [Extended Thinking Fix](./EXTENDED_THINKING_FIX.md) - Context pruning with thinking preservation
 - [Bug Fixes README](./README.md) - Standards and index
 
 **Related Docs:**

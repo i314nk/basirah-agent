@@ -27,10 +27,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 import anthropic
 
+from src.llm import LLMClient
 from src.agent.buffett_prompt import (
     get_buffett_personality_prompt,
     get_tool_descriptions_for_prompt
 )
+from src.agent.universal_react import UniversalReActLoop
 from src.tools.calculator_tool import CalculatorTool
 from src.tools.gurufocus_tool import GuruFocusTool
 from src.tools.web_search_tool import WebSearchTool
@@ -61,8 +63,8 @@ class WarrenBuffettAgent:
 
     # Model configuration
     MODEL = "claude-sonnet-4-20250514"  # Claude 4.5 Sonnet
-    MAX_TOKENS = 12000  # Response limit (balanced for input context + output)
-    THINKING_BUDGET = 8000  # Extended thinking budget (must be < MAX_TOKENS)
+    MAX_TOKENS = 20000  # Response limit (increased for comprehensive thesis generation)
+    THINKING_BUDGET = 10000  # Extended thinking budget (must be < MAX_TOKENS)
     MAX_ITERATIONS = 30  # Maximum tool call iterations
 
     # Context window management
@@ -88,25 +90,35 @@ class WarrenBuffettAgent:
         """
         return self.current_year - 1
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model_key: Optional[str] = None):
         """
         Initialize Warren Buffett AI Agent.
 
         Args:
-            api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
+            api_key: Anthropic API key (deprecated, use LLM_MODEL env var)
+            model_key: LLM model to use (defaults to LLM_MODEL env var)
 
         Raises:
-            ValueError: If API key is not provided or found in environment
+            ValueError: If required configuration is missing
         """
-        # Get API key
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY not found. Set environment variable or pass to constructor."
-            )
+        # Initialize LLM client with plug-and-play model selection
+        try:
+            self.llm = LLMClient(model_key=model_key)
+            logger.info(f"Initialized LLM: {self.llm.get_provider_info()}")
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM client: {e}")
+            raise ValueError(f"LLM initialization failed: {e}")
 
-        # Initialize Anthropic client
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Backward compatibility: if api_key provided, ensure it's set
+        if api_key:
+            os.environ["ANTHROPIC_API_KEY"] = api_key
+
+        # Keep legacy client for anthropic-specific features (like error handling)
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if self.api_key:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+        else:
+            self.client = None  # Will use LLM abstraction
 
         # Initialize all 4 tools
         logger.info("Initializing tools...")
@@ -281,7 +293,7 @@ class WarrenBuffettAgent:
             Analysis result with decision
         """
         initial_message = self._get_quick_screen_prompt(ticker)
-        return self._run_react_loop(ticker, initial_message)
+        return self._run_analysis_loop(ticker, initial_message)
 
     def _analyze_deep_dive_with_context_management(
         self,
@@ -779,7 +791,7 @@ Take your time. Be thorough. This is the foundation of your multi-year analysis.
 """
 
         # Run analysis on current year
-        result = self._run_react_loop(ticker, current_year_prompt)
+        result = self._run_analysis_loop(ticker, current_year_prompt)
 
         # Estimate tokens (rough: 1 token ≈ 4 characters)
         token_estimate = len(result.get('thesis', '')) // 4
@@ -929,7 +941,7 @@ comparison.
 """
 
         # Run analysis with summarization instructions
-        result = self._run_react_loop(ticker, summarization_prompt)
+        result = self._run_analysis_loop(ticker, summarization_prompt)
 
         # Extract the structured summary from response
         full_response = result.get('thesis', '')
@@ -1111,7 +1123,7 @@ Focus on facts and metrics that matter for long-term investment decisions.
 """
 
             # Analyze this prior year
-            result = self._run_react_loop(ticker, prior_year_prompt)
+            result = self._run_analysis_loop(ticker, prior_year_prompt)
 
             # Extract the summary from the response
             summary_text = self._extract_summary_from_response(
@@ -1587,7 +1599,7 @@ Now write your complete investment thesis with all 10 sections.
         synthesis_prompt = self._get_complete_thesis_prompt(ticker, current_year, prior_years)
 
         # Run final synthesis
-        result = self._run_react_loop(ticker, synthesis_prompt)
+        result = self._run_analysis_loop(ticker, synthesis_prompt)
 
         # Parse decision from result
         decision_data = self._parse_decision(ticker, result.get('thesis', ''))
@@ -1701,10 +1713,15 @@ Now write your complete investment thesis with all 10 sections.
         1. Always keep initial user prompt (messages[0])
         2. Keep only recent N message pairs (user + assistant)
         3. NO summary message (to preserve Extended Thinking format)
+        4. Ensure first assistant message starts with thinking block (Extended Thinking requirement)
 
         IMPORTANT: When Extended Thinking is enabled, we cannot insert arbitrary
         user messages as they break the thinking block requirements. We only keep
         initial prompt + most recent exchanges.
+
+        Additionally, Claude requires that when Extended Thinking is enabled, ALL
+        assistant messages must start with a thinking block. After pruning, we
+        verify this requirement is met.
 
         Args:
             messages: Current message history
@@ -1724,8 +1741,97 @@ Now write your complete investment thesis with all 10 sections.
         # Keep initial prompt
         initial_prompt = messages[0]
 
-        # Keep only recent messages
-        recent_messages = messages[-(self.MIN_RECENT_MESSAGES):]
+        # CRITICAL: Extended Thinking requires ALL assistant messages start with thinking block
+        # Strategy: Search backwards through message history to find the most recent assistant
+        # message that starts with a thinking block, then keep everything from there forward
+
+        logger.info("Searching backwards for assistant message with thinking block...")
+
+        # Search from most recent to oldest (excluding initial prompt)
+        valid_start_idx = None
+        for idx in range(len(messages) - 1, 0, -1):  # Start from end, go to 1 (skip initial prompt)
+            msg = messages[idx]
+
+            if msg.get("role") != "assistant":
+                continue
+
+            # Check if this assistant message starts with thinking
+            content = msg.get("content", [])
+            has_thinking_first = False
+
+            if isinstance(content, list) and len(content) > 0:
+                first_block = content[0]
+                if isinstance(first_block, dict):
+                    has_thinking_first = first_block.get("type") in ["thinking", "redacted_thinking"]
+                elif hasattr(first_block, "type"):
+                    has_thinking_first = first_block.type in ["thinking", "redacted_thinking"]
+
+            if has_thinking_first:
+                # Found it! This is our starting point
+                valid_start_idx = idx
+                logger.info(f"✓ Found assistant with thinking at index {idx} (Extended Thinking OK)")
+                break
+
+        if valid_start_idx is None:
+            # No assistant messages with thinking found - this shouldn't happen but handle it
+            logger.error("No assistant messages with thinking blocks found! Keeping recent messages anyway...")
+            recent_messages = messages[-(self.MIN_RECENT_MESSAGES):]
+        else:
+            # Keep from the valid start point forward
+            recent_messages = messages[valid_start_idx:]
+
+            # If still too many messages, we need to find a MORE RECENT assistant with thinking
+            # that fits within MIN_RECENT_MESSAGES, otherwise we'll cut off the thinking block
+            if len(recent_messages) > self.MIN_RECENT_MESSAGES:
+                logger.warning(
+                    f"Still have {len(recent_messages)} messages after finding thinking block. "
+                    f"Searching for more recent assistant with thinking..."
+                )
+
+                # Search backwards within recent_messages for the most recent assistant with thinking
+                # that would fit within MIN_RECENT_MESSAGES
+                found_closer = False
+                for i in range(len(recent_messages) - 1, 0, -1):
+                    msg = recent_messages[i]
+
+                    if msg.get("role") != "assistant":
+                        continue
+
+                    # Check if this assistant has thinking
+                    content = msg.get("content", [])
+                    has_thinking = False
+
+                    if isinstance(content, list) and len(content) > 0:
+                        first_block = content[0]
+                        if isinstance(first_block, dict):
+                            has_thinking = first_block.get("type") in ["thinking", "redacted_thinking"]
+                        elif hasattr(first_block, "type"):
+                            has_thinking = first_block.type in ["thinking", "redacted_thinking"]
+
+                    if has_thinking:
+                        # Check if keeping from here forward would fit
+                        remaining_from_here = len(recent_messages) - i
+                        if remaining_from_here <= self.MIN_RECENT_MESSAGES:
+                            # This works! Use this as the new start
+                            recent_messages = recent_messages[i:]
+                            logger.info(
+                                f"✓ Found closer assistant with thinking. "
+                                f"Keeping {len(recent_messages)} messages (Extended Thinking OK)"
+                            )
+                            found_closer = True
+                            break
+
+                # If we couldn't find a closer one that fits, we MUST keep the original thinking assistant
+                # to satisfy Extended Thinking requirements, even if it exceeds MIN_RECENT_MESSAGES
+                if not found_closer:
+                    logger.warning(
+                        f"No closer assistant with thinking found within limit. "
+                        f"Keeping all {len(recent_messages)} messages from thinking assistant forward "
+                        f"(Extended Thinking requirement)."
+                    )
+                    # Keep all messages from the thinking assistant forward
+                    # This is necessary because Extended Thinking is a hard requirement
+
 
         # Calculate pruned count for logging
         pruned_count = len(messages) - len(recent_messages) - 1
@@ -1849,7 +1955,84 @@ Now write your complete investment thesis with all 10 sections.
         return metrics
 
     # ========================================================================
-    # REACT LOOP (Original Implementation - Now Reusable)
+    # REACT LOOP (Smart Provider Detection)
+    # ========================================================================
+
+    def _run_analysis_loop(
+        self,
+        ticker: str,
+        initial_message: str
+    ) -> Dict[str, Any]:
+        """
+        Smart ReAct loop that automatically chooses the best implementation.
+
+        - For Claude: Uses native Extended Thinking + Tool Use
+        - For other providers: Uses Universal ReAct with JSON tool calling
+
+        This architecture allows future LLM providers (GPT-5, Gemini) to be added
+        easily with full tool use capability.
+
+        Args:
+            ticker: Stock ticker
+            initial_message: Initial prompt to agent
+
+        Returns:
+            dict: Analysis results with decision and thesis
+        """
+        # Check which provider is being used
+        provider_info = self.llm.get_provider_info()
+        provider_name = provider_info['provider']
+
+        logger.info(f"Using provider: {provider_name}")
+        logger.info(f"Model: {provider_info['model_id']}")
+
+        # For Claude: Use native Extended Thinking + Tool Use
+        if provider_name == 'Claude' and self.client is not None:
+            logger.info("Using Claude-native ReAct loop (Extended Thinking + Tool Use)")
+            return self._run_react_loop(ticker, initial_message)
+
+        # For all other providers: Use Universal ReAct Loop
+        logger.info(f"Using Universal ReAct loop with JSON tool calling")
+        logger.info("This enables future LLM providers to use tools just like Claude!")
+
+        # Create universal ReAct loop
+        react_loop = UniversalReActLoop(
+            llm_client=self.llm,
+            tools=self.tools,
+            max_iterations=self.MAX_ITERATIONS
+        )
+
+        # Run analysis
+        result = react_loop.run(
+            initial_prompt=initial_message,
+            system_prompt=self.system_prompt
+        )
+
+        if result["success"]:
+            # Extract analysis content
+            content = result["content"]
+
+            # Parse decision from content
+            decision = self._parse_decision(ticker, content)
+            decision_value = decision.get("decision", "UNKNOWN")
+
+            logger.info(f"Analysis Complete - Decision: {decision_value}")
+
+            return {
+                "decision": decision_value,
+                "thesis": content,
+                "metadata": result["metadata"]
+            }
+        else:
+            logger.error(f"Analysis failed: {result.get('error')}")
+            return {
+                "decision": "UNKNOWN",
+                "thesis": result.get("content", "Analysis incomplete"),
+                "metadata": result.get("metadata", {})
+            }
+
+    # ========================================================================
+    # REACT LOOP (Claude Native - Original Implementation)
     # ========================================================================
 
     def _run_react_loop(

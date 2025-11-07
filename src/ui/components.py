@@ -118,6 +118,13 @@ def render_results(result: Dict[str, Any]):
         if is_quick_screen:
             # Extract Quick Screen recommendation from thesis
             thesis = result.get('thesis', '')
+
+            # Handle None or empty thesis (analysis failed)
+            if not thesis:
+                st.error("❌ Analysis failed - No thesis generated")
+                st.info("This can happen when the LLM provider is unavailable or encounters an error.")
+                return
+
             thesis_upper = thesis.upper()
 
             # Check for various patterns of INVESTIGATE recommendation
