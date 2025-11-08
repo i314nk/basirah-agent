@@ -32,6 +32,7 @@ from src.ui.components import (
     display_cost_information,
     display_quick_screen_recommendation,
     display_sharia_screening_result,
+    display_sharia_screening_with_translation,
     display_analysis_type_badge,
     display_thesis_with_translation
 )
@@ -278,8 +279,8 @@ def main():
         display_cost_information(result)
 
         if last_analysis_type == 'sharia':
-            # Sharia compliance results
-            display_sharia_screening_result(result)
+            # Sharia compliance results with translation option
+            display_sharia_screening_with_translation(result, translator)
 
         else:
             # Investment analysis results

@@ -79,7 +79,10 @@ class CalculatorTool(Tool):
             "ROIC (return on invested capital), "
             "DCF (discounted cash flow valuation), "
             "Margin of Safety (undervaluation %), "
-            "Sharia Compliance (AAOIFI standards check)"
+            "Sharia Compliance (AAOIFI standards check). "
+            "IMPORTANT: For sharia_compliance_check, you MUST gather ALL required fields first: "
+            "total_debt, total_assets, cash_and_liquid_assets, market_cap, accounts_receivable, business_activities. "
+            "Tool will reject requests with missing fields."
         )
 
     @property

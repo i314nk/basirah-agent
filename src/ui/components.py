@@ -501,6 +501,148 @@ def display_sharia_screening_result(result: Dict[str, Any]):
     st.markdown(analysis)
 
 
+def display_sharia_screening_with_translation(result: Dict[str, Any], translator):
+    """
+    Display Sharia compliance screening results with Arabic translation option.
+
+    Args:
+        result: Sharia screening result dictionary
+        translator: ThesisTranslator instance
+    """
+    status = result.get('status', 'UNCLEAR')
+    purification_rate = result.get('purification_rate', 0.0)
+    analysis = result.get('analysis', '')
+    ticker = result.get('ticker', 'UNKNOWN')
+
+    st.divider()
+    st.subheader("☪️ Sharia Compliance Status")
+
+    # Status card with appropriate color
+    if status == "COMPLIANT":
+        st.success("### ✅ COMPLIANT")
+        st.markdown("""
+        **This company meets AAOIFI standards for Sharia compliance.**
+
+        - ✅ Permissible business activities
+        - ✅ Financial ratios within limits
+        - ✅ No purification required
+        - ✅ Suitable for all Muslim investors
+        """)
+
+    elif status == "DOUBTFUL":
+        st.warning(f"### ⚠️ DOUBTFUL (Purification Required)")
+        st.markdown(f"""
+        **This company has minor non-compliant elements.**
+
+        - ⚠️ Contains <5% non-compliant income
+        - ⚠️ Requires dividend purification: **{purification_rate:.1f}%**
+        - ✅ Suitable for moderate interpretations
+        - ❌ May not suit strict interpretations
+
+        **Purification Example:**
+        For every $100 in dividends: Donate ${purification_rate:.2f} to charity
+        """)
+
+    elif status == "NON-COMPLIANT":
+        st.error("### ❌ NON-COMPLIANT")
+        st.markdown("""
+        **This company does not meet AAOIFI standards.**
+
+        - ❌ Significant prohibited activities OR
+        - ❌ Financial ratios exceed thresholds
+        - ❌ Not suitable for Sharia portfolios
+        - 💡 Consider halal alternatives
+        """)
+
+    else:
+        st.info("### ⚪ STATUS UNCLEAR")
+        st.markdown("Review the detailed analysis below.")
+
+    # Display detailed analysis with translation option
+    st.divider()
+    st.markdown("### 📋 Detailed Analysis")
+
+    # Initialize translation cache for Sharia screens
+    if 'sharia_translation_cache' not in st.session_state:
+        st.session_state['sharia_translation_cache'] = {}
+    if 'show_sharia_arabic' not in st.session_state:
+        st.session_state['show_sharia_arabic'] = False
+
+    # Language selector
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        button_label = "🌍 عربي" if not st.session_state['show_sharia_arabic'] else "🇺🇸 English"
+        if st.button(button_label, key="sharia_translation_button"):
+            if not st.session_state['show_sharia_arabic']:
+                # Check if translation is cached for this ticker
+                if ticker not in st.session_state['sharia_translation_cache']:
+                    # Translate and cache
+                    with st.spinner("Translating to Arabic... / جاري الترجمة إلى العربية..."):
+                        translation_result = translator.translate_to_arabic(
+                            analysis,
+                            ticker
+                        )
+                        st.session_state['sharia_translation_cache'][ticker] = {
+                            'translated_analysis': translation_result['translated_thesis'],
+                            'cost': translation_result['cost']
+                        }
+
+                        # Add translation cost to session translation costs
+                        if 'session_translation_costs' not in st.session_state:
+                            st.session_state['session_translation_costs'] = []
+                        st.session_state['session_translation_costs'].append(translation_result['cost'])
+
+                # Show Arabic
+                st.session_state['show_sharia_arabic'] = True
+            else:
+                # Toggle back to English (keep cached translation)
+                st.session_state['show_sharia_arabic'] = False
+
+            st.rerun()
+
+    # Display analysis (English or Arabic)
+    if st.session_state['show_sharia_arabic'] and ticker in st.session_state['sharia_translation_cache']:
+        # Arabic display with RTL
+        arabic_text = st.session_state['sharia_translation_cache'][ticker]['translated_analysis']
+
+        # Add RTL styling
+        st.markdown(
+            """<style>
+            .rtl-container {
+                direction: rtl !important;
+                text-align: right !important;
+                font-size: 1.2rem !important;
+                line-height: 1.8 !important;
+            }
+            .rtl-container h1 {
+                direction: rtl !important;
+                text-align: right !important;
+                font-size: 2.2rem !important;
+            }
+            .rtl-container h2 {
+                direction: rtl !important;
+                text-align: right !important;
+                font-size: 1.8rem !important;
+            }
+            .rtl-container h3 {
+                direction: rtl !important;
+                text-align: right !important;
+                font-size: 1.5rem !important;
+            }
+            </style>""",
+            unsafe_allow_html=True
+        )
+
+        st.markdown(f'<div class="rtl-container">{arabic_text}</div>', unsafe_allow_html=True)
+
+        # Show translation cost
+        cost = st.session_state['sharia_translation_cache'][ticker]['cost']
+        st.caption(f"💰 Translation cost: ${cost:.2f}")
+    else:
+        # English display
+        st.markdown(analysis)
+
+
 def display_analysis_type_badge(analysis_type: str):
     """
     Display badge showing which analysis type was run.

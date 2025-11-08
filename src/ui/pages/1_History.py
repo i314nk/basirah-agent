@@ -125,7 +125,14 @@ else:
             with col2:
                 type_emoji = {'quick': '⚡', 'deep_dive': '🔍', 'sharia': '☪️'}
                 emoji = type_emoji.get(result['analysis_type'], '📊')
-                st.markdown(f"{emoji} **{result['analysis_type'].replace('_', ' ').title()}**")
+                analysis_type_display = result['analysis_type'].replace('_', ' ').title()
+
+                # Add years info for deep dive analyses
+                if result['analysis_type'] == 'deep_dive' and result.get('years_analyzed'):
+                    years = result['years_analyzed']
+                    analysis_type_display = f"{analysis_type_display} ({years} year{'s' if years > 1 else ''})"
+
+                st.markdown(f"{emoji} **{analysis_type_display}**")
 
             with col3:
                 st.markdown(f"*{result['analysis_date']}*")
@@ -170,7 +177,11 @@ else:
                             st.markdown(analysis.get('thesis', analysis.get('analysis', 'No content')))
 
             with col2:
-                st.markdown(f"Cost: ${result.get('cost', 0):.2f} | Duration: {result.get('duration_seconds', 0)}s")
+                cost_duration = f"Cost: ${result.get('cost', 0):.2f} | Duration: {result.get('duration_seconds', 0)}s"
+                # Add years for deep dive analyses
+                if result['analysis_type'] == 'deep_dive' and result.get('years_analyzed'):
+                    cost_duration += f" | Years: {result['years_analyzed']}"
+                st.markdown(cost_duration)
 
             with col3:
                 if st.button("Delete", key=f"delete_{result['id']}", type="secondary", use_container_width=True):

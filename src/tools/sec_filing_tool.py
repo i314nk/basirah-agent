@@ -109,7 +109,7 @@ class SECFilingTool(Tool):
     RETRY_BACKOFF_FACTOR = 2  # 1s, 2s, 4s
 
     # Filing Types
-    VALID_FILING_TYPES = ["10-K", "10-Q", "DEF 14A", "8-K"]
+    VALID_FILING_TYPES = ["10-K", "10-Q", "20-F", "DEF 14A", "8-K"]
 
     # Sections (for 10-K/10-Q)
     VALID_SECTIONS = ["business", "risk_factors", "mda", "financial_statements", "full"]
@@ -139,14 +139,16 @@ class SECFilingTool(Tool):
         Retrieves corporate filings from SEC EDGAR database.
 
         Capabilities:
-        - 10-K annual reports (business description, risk factors, MD&A)
+        - 10-K annual reports (business description, risk factors, MD&A) - US companies
+        - 20-F annual reports (business description, risk factors, MD&A) - Foreign companies (ADRs)
         - 10-Q quarterly reports
         - DEF 14A proxy statements (executive compensation, governance)
         - Section extraction (business, risk_factors, mda, financial_statements)
         - Clean text extraction from HTML
+        - Auto-fallback: When requesting 10-K, automatically tries 20-F if not found (for foreign companies)
 
         Use for Warren Buffett-style analysis:
-        - Business understanding: Extract "Business" section from 10-K
+        - Business understanding: Extract "Business" section from 10-K or 20-F
         - Risk assessment: Extract "Risk Factors" section
         - Management evaluation: Review MD&A and proxy statements
         - Circle of competence: Read business descriptions to assess understandability
@@ -155,6 +157,7 @@ class SECFilingTool(Tool):
         - No API key required (SEC EDGAR is free)
         - Rate limited to 9 requests/second (SEC enforces 10 req/sec max)
         - Filings are large (10-K can be 200+ pages), use section extraction to reduce tokens
+        - Foreign companies (TSM, BABA, NVO, etc.) file 20-F instead of 10-K - tool handles this automatically
         """
 
     @property
@@ -176,9 +179,9 @@ class SECFilingTool(Tool):
                 },
                 "filing_type": {
                     "type": "string",
-                    "description": "Type of SEC filing to retrieve",
+                    "description": "Type of SEC filing to retrieve. Use '10-K' for annual reports (auto-falls back to '20-F' for foreign companies), '10-Q' for quarterly reports, 'DEF 14A' for proxy statements.",
                     "enum": self.VALID_FILING_TYPES,
-                    "examples": ["10-K", "DEF 14A"]
+                    "examples": ["10-K", "20-F", "DEF 14A"]
                 },
                 "section": {
                     "type": "string",
@@ -321,10 +324,21 @@ class SECFilingTool(Tool):
 
             # Step 4: Find specific filing
             filing_info = self._find_filing(company_data, filing_type, year, quarter)
+
+            # Auto-fallback to 20-F for foreign companies (ADRs)
+            # Foreign companies file 20-F instead of 10-K
+            if not filing_info and filing_type == "10-K":
+                logger.info(f"No 10-K found for {ticker}, trying 20-F (foreign company annual report)...")
+                filing_info = self._find_filing(company_data, "20-F", year, quarter)
+
+                if filing_info:
+                    logger.info(f"Found 20-F filing instead (foreign company): {ticker}")
+                    filing_type = "20-F"  # Update filing_type for subsequent messages
+
             if not filing_info:
                 year_str = f" in fiscal year {year}" if year else ""
                 error_msg = (
-                    f"No {filing_type} filing found for {ticker}{year_str}. "
+                    f"No {filing_type} or 20-F filing found for {ticker}{year_str}. "
                     f"Try a different year or check company's filing history."
                 )
                 logger.error(error_msg)

@@ -63,8 +63,8 @@ class WarrenBuffettAgent:
 
     # Model configuration
     MODEL = "claude-sonnet-4-20250514"  # Claude 4.5 Sonnet
-    MAX_TOKENS = 20000  # Response limit (increased for comprehensive thesis generation)
-    THINKING_BUDGET = 10000  # Extended thinking budget (must be < MAX_TOKENS)
+    MAX_TOKENS = 32000  # Response limit (increased for 10-year comprehensive thesis generation)
+    THINKING_BUDGET = 12000  # Extended thinking budget (must be < MAX_TOKENS)
     MAX_ITERATIONS = 30  # Maximum tool call iterations
 
     # Context window management
@@ -400,12 +400,14 @@ class WarrenBuffettAgent:
         current_year_strategy = current_year_analysis.get('strategy', 'standard')
         adaptive_used = current_year_strategy == 'adaptive_summarization'
 
+        years_analyzed_list = [current_year_analysis.get('year')] + [p['year'] for p in prior_years_summaries]
+
         final_thesis["metadata"]["context_management"] = {
             "strategy": current_year_strategy,  # 'standard' or 'adaptive_summarization'
             "current_year_tokens": current_year_analysis.get('token_estimate', 0),
             "prior_years_tokens": total_prior_tokens,
             "total_token_estimate": total_token_estimate,
-            "years_analyzed": [current_year_analysis.get('year')] + [p['year'] for p in prior_years_summaries],
+            "years_analyzed": years_analyzed_list,
             "years_requested": years_to_analyze,
             "years_skipped": missing_years if missing_years else None,  # List of years with no 10-K available
             "years_skipped_count": len(missing_years),
@@ -416,6 +418,9 @@ class WarrenBuffettAgent:
             "summary_size": current_year_analysis.get('summary_size'),
             "reduction_percent": current_year_analysis.get('reduction_percent')
         }
+
+        # Add years_analyzed count at top level for database storage
+        final_thesis["metadata"]["years_analyzed"] = len(years_analyzed_list)
 
         logger.info(f"\nTotal estimated context: ~{total_token_estimate} tokens")
         logger.info(f"Strategy: {current_year_strategy}" + (f" (adaptive applied to large filing)" if adaptive_used else ""))
@@ -1198,6 +1203,18 @@ Focus on facts and metrics that matter for long-term investment decisions.
 Now it's time to write your COMPLETE investment thesis as you would in one of
 your Berkshire Hathaway shareholder letters.
 
+**CRITICAL INSTRUCTIONS - READ CAREFULLY:**
+
+1. You MUST write ALL 10 sections listed below in sequential order
+2. DO NOT stop writing until you have completed Section 10 (Final Investment Decision)
+3. DO NOT skip ahead to your conclusion - write each section completely
+4. DO NOT provide a summary or shortened version - full detail is required
+5. An incomplete thesis is considered a FAILURE
+
+You will know you're finished ONLY when you've written your Final Investment
+Decision in Section 10. If you're thinking about stopping before that, you're
+not done yet - keep writing.
+
 **CURRENT YEAR (2024) - FULL ANALYSIS:**
 
 {current_year['full_analysis']}
@@ -1216,7 +1233,7 @@ Warren, write a comprehensive investment thesis for {ticker} that includes ALL o
 these sections. This should be a complete analysis that any investor could read
 to understand the entire investment case.
 
-**REQUIRED STRUCTURE - YOU MUST INCLUDE ALL 10 SECTIONS:**
+**WRITE ALL 10 SECTIONS BELOW IN ORDER - NO EXCEPTIONS:**
 
 ## **1. Business Overview** (3-4 paragraphs)
 
@@ -1546,18 +1563,20 @@ investment decision.
 
 ---
 
-**CRITICAL REQUIREMENTS:**
+**CRITICAL REQUIREMENTS - MUST FOLLOW:**
 
 1. **Include ALL 10 sections above** - DO NOT skip any section
-2. **Use specific numbers and examples** from the filings you read
-3. **Write in Warren Buffett's authentic voice** throughout (folksy, clear, humble)
-4. **Make it comprehensive** - target 3,000-5,000 words total
-5. **Show your work** - explain reasoning, don't just state conclusions
-6. **Use tables and formatting** where helpful for readability
-7. **Be honest** about limitations and uncertainties
-8. **Connect multi-year insights** - reference trends you observed
-9. **Use proper section headers** exactly as shown (## **1. Business Overview**, etc.)
-10. **End with structured decision** with all required fields
+2. **Write sections IN ORDER** - Start with Section 1, end with Section 10
+3. **DO NOT stop early** - Stopping before Section 10 is INCOMPLETE and UNACCEPTABLE
+4. **Use specific numbers and examples** from the filings you read
+5. **Write in Warren Buffett's authentic voice** throughout (folksy, clear, humble)
+6. **Make it comprehensive** - target 3,000-5,000 words total
+7. **Show your work** - explain reasoning, don't just state conclusions
+8. **Use tables and formatting** where helpful for readability
+9. **Be honest** about limitations and uncertainties
+10. **Connect multi-year insights** - reference trends you observed
+11. **Use proper section headers** exactly as shown (## **1. Business Overview**, etc.)
+12. **End with structured decision** with all required fields in Section 10
 
 This thesis should be so complete that an investor could read ONLY this document
 and fully understand the entire investment case without needing any other analysis.
@@ -1565,7 +1584,13 @@ and fully understand the entire investment case without needing any other analys
 Remember your principle: "It's far better to buy a wonderful company at a fair
 price than a fair company at a wonderful price."
 
-Now write your complete investment thesis with all 10 sections.
+**FINAL REMINDER BEFORE YOU START:**
+You are about to write a 10-section investment thesis. Do not stop until you've
+completed Section 10 (Final Investment Decision). If you find yourself thinking
+"I can just give my recommendation now," STOP and keep writing the remaining sections.
+The journey through all 10 sections is as important as the destination.
+
+Now begin writing Section 1 and continue through Section 10 without stopping.
 """
 
         return synthesis_prompt
@@ -1597,6 +1622,12 @@ Now write your complete investment thesis with all 10 sections.
 
         # Build complete thesis prompt with explicit 10-section structure
         synthesis_prompt = self._get_complete_thesis_prompt(ticker, current_year, prior_years)
+
+        # Log synthesis prompt size for monitoring
+        prompt_chars = len(synthesis_prompt)
+        prompt_tokens_est = prompt_chars // 4  # Rough estimate: 4 chars per token
+        logger.info(f"Synthesis prompt size: {prompt_chars:,} characters (~{prompt_tokens_est:,} tokens)")
+        logger.info(f"MAX_TOKENS available for response: {self.MAX_TOKENS:,}")
 
         # Run final synthesis
         result = self._run_analysis_loop(ticker, synthesis_prompt)
@@ -2067,8 +2098,9 @@ Now write your complete investment thesis with all 10 sections.
             logger.info(f"\n--- Iteration {iteration} ---")
 
             try:
-                # Call Claude with extended thinking
-                response = self.client.messages.create(
+                # Call Claude with extended thinking using STREAMING
+                # Streaming is required for MAX_TOKENS >= 32K (operations > 10 minutes)
+                stream = self.client.messages.create(
                     model=self.MODEL,
                     max_tokens=self.MAX_TOKENS,
                     system=self.system_prompt,
@@ -2077,7 +2109,8 @@ Now write your complete investment thesis with all 10 sections.
                     thinking={
                         "type": "enabled",
                         "budget_tokens": self.THINKING_BUDGET
-                    }
+                    },
+                    stream=True  # Enable streaming for long operations
                 )
 
                 # Track token usage for cost calculation
@@ -2085,31 +2118,114 @@ Now write your complete investment thesis with all 10 sections.
                     self._total_input_tokens = 0
                     self._total_output_tokens = 0
 
-                self._total_input_tokens += response.usage.input_tokens
-                self._total_output_tokens += response.usage.output_tokens
-
-                # Process response blocks
+                # Accumulate response from stream
                 assistant_content = []
                 tool_uses = []
+                current_block = None
+                current_block_index = 0
 
-                for block in response.content:
-                    if block.type == "thinking":
-                        # Extended thinking - agent reasoning internally
-                        logger.debug(f"[Thinking] {len(block.thinking)} characters")
-                        assistant_content.append(block)
+                input_tokens = 0
+                output_tokens = 0
 
-                    elif block.type == "text":
-                        # Agent's text output
-                        logger.info(f"[Agent] {block.text[:200]}...")
-                        assistant_content.append(block)
+                logger.debug("Processing streaming response...")
 
-                    elif block.type == "tool_use":
-                        # Agent wants to use a tool
-                        tool_uses.append(block)
-                        assistant_content.append(block)
-                        logger.info(f"[Tool Use] {block.name} with id {block.id}")
+                for event in stream:
+                    # Message start - contains initial usage info
+                    if event.type == "message_start":
+                        input_tokens = event.message.usage.input_tokens
+                        logger.debug(f"Stream started - input tokens: {input_tokens}")
+
+                    # Content block start - new thinking, text, or tool_use block
+                    elif event.type == "content_block_start":
+                        current_block_index = event.index
+                        block = event.content_block
+
+                        if block.type == "thinking":
+                            current_block = {"type": "thinking", "thinking": ""}
+                            # Note: signature comes later as signature_delta, not in content_block_start
+                        elif block.type == "text":
+                            current_block = {"type": "text", "text": ""}
+                        elif block.type == "tool_use":
+                            current_block = {
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": {}
+                            }
+                            logger.info(f"[Tool Use] {block.name} (id: {block.id})")
+
+                    # Content block delta - incremental content
+                    elif event.type == "content_block_delta":
+                        if current_block is None:
+                            continue
+
+                        delta = event.delta
+
+                        if delta.type == "thinking_delta":
+                            current_block["thinking"] += delta.thinking
+                        elif delta.type == "signature_delta":
+                            # Signature comes as a separate delta event (see Anthropic docs)
+                            if "signature" not in current_block:
+                                current_block["signature"] = ""
+                            current_block["signature"] += delta.signature
+                            logger.debug(f"[Accumulated signature: {len(current_block['signature'])} chars]")
+                        elif delta.type == "text_delta":
+                            current_block["text"] += delta.text
+                        elif delta.type == "input_json_delta":
+                            # Accumulate JSON input for tool use
+                            if "input_json" not in current_block:
+                                current_block["input_json"] = ""
+                            current_block["input_json"] += delta.partial_json
+
+                    # Content block stop - block complete
+                    elif event.type == "content_block_stop":
+                        if current_block is None:
+                            continue
+
+                        # Finalize tool_use input if needed
+                        if current_block["type"] == "tool_use" and "input_json" in current_block:
+                            import json
+                            current_block["input"] = json.loads(current_block["input_json"])
+                            del current_block["input_json"]
+
+                        # Keep as dictionaries - the messages API accepts dicts
+                        if current_block["type"] == "thinking":
+                            logger.debug(f"[Thinking] {len(current_block['thinking'])} characters")
+                            assistant_content.append(current_block)
+                        elif current_block["type"] == "text":
+                            logger.info(f"[Agent] {current_block['text'][:200]}...")
+                            assistant_content.append(current_block)
+                        elif current_block["type"] == "tool_use":
+                            # Create simple namespace for tool_uses list (needs .name, .id, .input attributes)
+                            from types import SimpleNamespace
+                            tool_use_obj = SimpleNamespace(
+                                type="tool_use",
+                                id=current_block["id"],
+                                name=current_block["name"],
+                                input=current_block["input"]
+                            )
+                            tool_uses.append(tool_use_obj)
+                            assistant_content.append(current_block)
+
+                        current_block = None
+
+                    # Message delta - usage updates
+                    elif event.type == "message_delta":
+                        if hasattr(event, 'usage') and event.usage:
+                            output_tokens = event.usage.output_tokens
+
+                    # Message stop - stream complete
+                    elif event.type == "message_stop":
+                        logger.debug("Stream completed")
+
+                # Update token usage
+                self._total_input_tokens += input_tokens
+                self._total_output_tokens += output_tokens
+                logger.debug(f"Tokens - Input: {input_tokens}, Output: {output_tokens}")
 
                 # Add assistant's response to conversation
+                # Now that we properly capture signatures from signature_delta events,
+                # we can include full thinking blocks in message history
                 messages.append({
                     "role": "assistant",
                     "content": assistant_content
@@ -2157,9 +2273,10 @@ Now write your complete investment thesis with all 10 sections.
                 # No tool use - agent has finished
                 # Extract final thesis from text blocks
                 final_text = ""
-                for block in response.content:
-                    if block.type == "text":
-                        final_text += block.text + "\n\n"
+                for block in assistant_content:
+                    # Blocks are now dictionaries
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        final_text += block.get("text", "") + "\n\n"
 
                 logger.info(f"Agent finished after {tool_calls_made} tool calls")
 
