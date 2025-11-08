@@ -854,16 +854,23 @@ def render_sidebar_info():
         st.markdown("### ⚙️ How It Works")
 
         st.markdown("""
-        **Deep Dive Analysis:**
-        1. Reads complete 10-K annual reports (200+ pages)
-        2. Analyzes 3 years of financial history
-        3. Uses 4 specialized tools (GuruFocus, SEC Filing, Web Search, Calculator)
-        4. Generates comprehensive investment thesis in Buffett's voice
+        **Quick Screen** (~$1.14, 2-3 min):
+        - Analyzes 1 year of data
+        - Reads business section from 10-K
+        - Provides Deep Dive recommendation
 
-        **Context Management:**
-        - Automatically handles companies of any size
-        - Adaptive summarization for large filings (e.g., Coca-Cola)
-        - 100% company coverage achieved
+        **Deep Dive** ($2-4, 5-15 min):
+        - Reads complete 10-K annual reports (200+ pages)
+        - Analyzes 1-10 years of financial history
+        - Uses 4 specialized tools (GuruFocus, SEC Filing, Web Search, Calculator)
+        - Context management: Full current year + summarized prior years
+        - Generates comprehensive investment thesis
+
+        **Sharia Compliance** (~$0.98, 3-5 min):
+        - AAOIFI standard screening
+        - Business activity verification
+        - Financial ratio compliance check
+        - Purification rate calculation
         """)
 
         st.divider()

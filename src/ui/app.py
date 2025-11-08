@@ -21,6 +21,7 @@ from src.agent.buffett_agent import WarrenBuffettAgent
 from src.agent.translator import ThesisTranslator
 from src.agent.sharia_screener import ShariaScreener
 from src.storage import AnalysisStorage
+from src.ui.cost_estimator import CostEstimator
 from src.ui.components import (
     render_header,
     render_ticker_input,
@@ -109,8 +110,17 @@ def main():
             st.sidebar.warning(f"Analysis history unavailable: {e}")
             st.session_state['analysis_storage'] = None
 
+    # Initialize Cost Estimator (cache in session state)
+    if 'cost_estimator' not in st.session_state:
+        try:
+            st.session_state['cost_estimator'] = CostEstimator()
+        except Exception as e:
+            st.sidebar.warning(f"Cost estimation unavailable: {e}")
+            st.session_state['cost_estimator'] = None
+
     sharia_screener = st.session_state['sharia_screener']
     storage = st.session_state['analysis_storage']
+    cost_estimator = st.session_state['cost_estimator']
 
     # Sidebar info
     render_sidebar_info()
@@ -180,7 +190,8 @@ def main():
                 f"- Year range: {year_range}\n"
                 f"- Total: {years_to_analyze} year{'s' if years_to_analyze > 1 else ''} analyzed\n\n"
                 f"**Estimated time:** ~{2 + (years_to_analyze-1)*2}-{3 + (years_to_analyze-1)*2} minutes\n"
-                f"**Estimated cost:** ~${1.5 + (years_to_analyze-1)*0.5:.2f}"
+                f"**Estimated cost:** ~${2.09 + (years_to_analyze-1)*0.18:.2f}\n"
+                f"💡 Use 'Check Cost' button for exact estimate"
             )
 
     # Main content area
@@ -197,9 +208,9 @@ def main():
             "📊 Analysis Type",
             ["Quick Screen", "Deep Dive", "Sharia Compliance"],
             help="""
-            - **Quick Screen**: Fast 1-year snapshot with Deep Dive recommendation ($0.75-$1.50, 2-3 min)
-            - **Deep Dive**: Complete multi-year Warren Buffett analysis ($2.50-$7, 5-15 min)
-            - **Sharia Compliance**: AAOIFI standard Islamic finance screening ($1.50-$2.50, 3-5 min)
+            - **Quick Screen**: Fast 1-year snapshot with Deep Dive recommendation (~$1.14, 2-3 min)
+            - **Deep Dive**: Complete multi-year Warren Buffett analysis ($2-4, 5-15 min depending on years)
+            - **Sharia Compliance**: AAOIFI standard Islamic finance screening (~$0.98, 3-5 min)
             """
         )
 
@@ -212,8 +223,104 @@ def main():
 
     st.divider()
 
-    # Analyze button
-    if st.button("🎯 Analyze Company", type="primary", use_container_width=True):
+    # Check Cost and Analyze buttons
+    col_btn1, col_btn2 = st.columns(2)
+
+    with col_btn1:
+        check_cost_clicked = st.button("💰 Check Cost", use_container_width=True)
+
+    with col_btn2:
+        analyze_clicked = st.button("🎯 Analyze Company", type="primary", use_container_width=True)
+
+    # Handle Check Cost button click
+    if check_cost_clicked:
+        if not ticker:
+            st.error("⚠️ Please enter a stock ticker symbol")
+        elif not validate_ticker(ticker):
+            st.error(
+                f"⚠️ Invalid ticker format: '{ticker}'\n\n"
+                "Please enter a valid US stock ticker (1-5 uppercase letters, e.g., AAPL, MSFT, KO)"
+            )
+        elif not cost_estimator:
+            st.error("⚠️ Cost estimation is not available. Please check API configuration.")
+        else:
+            st.divider()
+            st.markdown(f"### 💰 Cost Estimate for {ticker.upper()}")
+
+            with st.spinner("Calculating exact cost using token counting..."):
+                try:
+                    # Get cost estimate based on analysis type
+                    if analysis_type == "Quick Screen":
+                        agent = get_agent()
+                        estimate = cost_estimator.estimate_quick_screen_cost(ticker, agent)
+                    elif analysis_type == "Deep Dive":
+                        agent = get_agent()
+                        estimate = cost_estimator.estimate_deep_dive_cost(ticker, years_to_analyze, agent)
+                    else:  # Sharia Compliance
+                        if not sharia_screener:
+                            st.error("⚠️ Sharia screening is not available.")
+                        else:
+                            estimate = cost_estimator.estimate_sharia_screen_cost(ticker, sharia_screener)
+
+                    # Display the estimate
+                    if estimate.get('success'):
+                        st.success("✅ Cost Estimate Complete")
+
+                        col1, col2, col3 = st.columns(3)
+
+                        with col1:
+                            st.metric(
+                                "Total Estimated Cost",
+                                f"${estimate['total_estimated_cost']:.2f}",
+                                help="Based on exact token counting"
+                            )
+
+                        with col2:
+                            st.metric(
+                                "Min Cost",
+                                f"${estimate['min_cost']:.2f}",
+                                help="Lower bound estimate"
+                            )
+
+                        with col3:
+                            st.metric(
+                                "Max Cost",
+                                f"${estimate['max_cost']:.2f}",
+                                help="Upper bound estimate"
+                            )
+
+                        # Show detailed breakdown
+                        with st.expander("📊 Detailed Breakdown"):
+                            st.markdown(f"""
+                            **Analysis Type:** {estimate.get('analysis_type', 'N/A').replace('_', ' ').title()}
+
+                            **Token Counts:**
+                            - Input Tokens: {estimate.get('input_tokens', 'N/A'):,}
+                            - Estimated Output Tokens: {estimate.get('estimated_output_tokens', 'N/A'):,}
+
+                            **Cost Breakdown:**
+                            - Input Cost: ${estimate.get('input_cost', 0):.2f}
+                            - Output Cost: ${estimate.get('estimated_output_cost', 0):.2f}
+                            - **Total: ${estimate['total_estimated_cost']:.2f}**
+
+                            **Confidence:** {estimate.get('confidence', 'N/A').upper()}
+                            """)
+
+                            if 'years_to_analyze' in estimate:
+                                st.info(f"📅 This estimate is for {estimate['years_to_analyze']} year(s) of analysis")
+
+                        st.info("💡 Click 'Analyze Company' to proceed with the analysis")
+                    else:
+                        # Fallback estimate
+                        st.warning(f"⚠️ Token counting unavailable: {estimate.get('error', 'Unknown error')}")
+                        st.info(f"📊 Using historical average: ${estimate['total_estimated_cost']:.2f} (${estimate['min_cost']:.2f} - ${estimate['max_cost']:.2f})")
+                        st.caption(estimate.get('note', ''))
+
+                except Exception as e:
+                    st.error(f"❌ Cost estimation failed: {str(e)}")
+
+    # Handle Analyze button click
+    if analyze_clicked:
         if not ticker:
             st.error("⚠️ Please enter a stock ticker symbol")
         elif not validate_ticker(ticker):

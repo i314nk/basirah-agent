@@ -374,7 +374,9 @@ Analyze {ticker} for Sharia (Islamic law) compliance according to AAOIFI standar
 **PHASE 1: DATA GATHERING (USE TOOLS)**
 
 Step 1: Fetch latest 10-K or 20-F annual report using sec_filing_tool
+- Use section="business" to get the business description (more efficient than full filing)
 - Look for: Business description, revenue breakdown by segment, any prohibited activities
+- Example: sec_filing_tool(ticker="{ticker}", filing_type="10-K", section="business")
 
 Step 2: Get ALL financial metrics using gurufocus_tool (make MULTIPLE calls if needed)
 - REQUIRED DATA YOU MUST GATHER BEFORE USING CALCULATOR:
