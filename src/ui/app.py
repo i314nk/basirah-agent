@@ -165,10 +165,10 @@ def main():
         with st.expander("Analysis Configuration", expanded=False):
             years_to_analyze = st.slider(
                 "Years to Analyze (Deep Dive)",
-                min_value=1,
+                min_value=5,
                 max_value=10,
-                value=3,
-                help="Number of years to include in multi-year analysis. More years = longer analysis time and deeper trend insights."
+                value=5,
+                help="Number of years to include in multi-year analysis. Deep Dive requires 5-10 years for meaningful trend analysis and to assess management quality over time. More years = longer analysis time and deeper insights."
             )
 
             # Calculate fiscal years dynamically
@@ -209,7 +209,7 @@ def main():
             ["Quick Screen", "Deep Dive", "Sharia Compliance"],
             help="""
             - **Quick Screen**: Fast 1-year snapshot with Deep Dive recommendation (~$1.14, 2-3 min)
-            - **Deep Dive**: Complete multi-year Warren Buffett analysis ($2-4, 5-15 min depending on years)
+            - **Deep Dive**: Complete 5-10 year Warren Buffett analysis ($2.81-$3.71, 10-20 min)
             - **Sharia Compliance**: AAOIFI standard Islamic finance screening (~$0.98, 3-5 min)
             """
         )

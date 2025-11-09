@@ -859,9 +859,9 @@ def render_sidebar_info():
         - Reads business section from 10-K
         - Provides Deep Dive recommendation
 
-        **Deep Dive** ($2-4, 5-15 min):
+        **Deep Dive** ($2.81-$3.71, 10-20 min):
         - Reads complete 10-K annual reports (200+ pages)
-        - Analyzes 1-10 years of financial history
+        - Analyzes 5-10 years of financial history
         - Uses 4 specialized tools (GuruFocus, SEC Filing, Web Search, Calculator)
         - Context management: Full current year + summarized prior years
         - Generates comprehensive investment thesis
