@@ -210,15 +210,21 @@ class GuruFocusTool(Tool):
         company_name = self._extract_company_name(api_data, endpoint, ticker)
 
         # Process data based on endpoint
+        # Note: API wraps response in endpoint key (e.g., {'summary': {...}})
+        # Extract the nested data for processing methods
         try:
             if endpoint == "summary":
-                processed_data = self._process_summary(api_data)
+                endpoint_data = api_data.get('summary', api_data)
+                processed_data = self._process_summary(endpoint_data)
             elif endpoint == "financials":
-                processed_data = self._process_financials(api_data, period)
+                endpoint_data = api_data.get('financials', api_data)
+                processed_data = self._process_financials(endpoint_data, period)
             elif endpoint == "keyratios":
-                processed_data = self._process_keyratios(api_data)
+                endpoint_data = api_data.get('keyratios', api_data)
+                processed_data = self._process_keyratios(endpoint_data)
             elif endpoint == "valuation":
-                processed_data = self._process_valuation(api_data)
+                endpoint_data = api_data.get('valuation', api_data)
+                processed_data = self._process_valuation(endpoint_data)
             else:
                 return self._error(f"Unknown endpoint: {endpoint}")
         except Exception as e:
@@ -495,40 +501,60 @@ class GuruFocusTool(Tool):
         financials = {}
 
         # Navigate to financials data
-        if "financials" not in data:
-            return {"metrics": metrics, "financials": financials, "valuation": {}}
+        # BUGFIX (2025-11-17): API returns "annuals"/"quarterly" keys, not "financials" wrapper
+        # Old structure expected: data["financials"]["annual"]
+        # Actual structure: data["annuals"] or data["quarterly"]
+        period_key = "annuals" if period == "annual" else "quarterly"
+        period_data = data.get(period_key, {})
 
-        fin_data = data["financials"]
-        period_data = fin_data.get(period, fin_data.get("annual", {}))
+        logger.info(f"[FINANCIALS DEBUG] period={period}, period_key={period_key}, has period_data={bool(period_data)}, data keys={list(data.keys())[:5]}")
+
+        # BUGFIX DEBUG (2025-11-17): Check what fields are available in period_data
+        if period_data:
+            logger.info(f"[FINANCIALS DEBUG] period_data has {len(period_data)} keys")
+            logger.info(f"[FINANCIALS DEBUG] First 15 keys: {list(period_data.keys())[:15]}")
 
         # Extract most recent year's key components for Owner Earnings
         if period_data:
             # Get fiscal years/quarters
             fiscal_period = period_data.get("Fiscal Year", period_data.get("Fiscal Quarter", []))
+            logger.info(f"[FINANCIALS DEBUG] fiscal_period length={len(fiscal_period) if isinstance(fiscal_period, list) else 'not a list'}, first 3={fiscal_period[:3] if isinstance(fiscal_period, list) and len(fiscal_period) >= 3 else fiscal_period}")
 
             if fiscal_period and len(fiscal_period) > 0:
+                # BUGFIX (2025-11-17): Data is nested in income_statement, balance_sheet, cashflow_statement
+                # Not flat in period_data - must access nested dictionaries
+                # Extract these once and use for both current year AND historical data
+                income_stmt = period_data.get("income_statement", {})
+                balance_sheet = period_data.get("balance_sheet", {})
+                cashflow_stmt = period_data.get("cashflow_statement", {})
+
                 # Owner Earnings components (most recent)
-                financials["net_income"] = self._safe_float_from_series(period_data.get("Net Income"), 0)
+                # BUGFIX (2025-11-17): Use index -1 for most recent value (arrays are chronological after our -10: slice fix)
+                financials["net_income"] = self._safe_float_from_series(income_stmt.get("Net Income"), -1)
                 financials["depreciation_amortization"] = self._safe_float_from_series(
-                    period_data.get("Depreciation & Amortization"), 0
+                    cashflow_stmt.get("Cash Flow Depreciation, Depletion and Amortization"), -1
                 )
-                financials["capex"] = self._safe_float_from_series(period_data.get("Capital Expenditure"), 0)
-                financials["free_cash_flow"] = self._safe_float_from_series(period_data.get("Free Cash Flow"), 0)
+                financials["capex"] = self._safe_float_from_series(cashflow_stmt.get("Capital Expenditure"), -1)
+                financials["free_cash_flow"] = self._safe_float_from_series(cashflow_stmt.get("Free Cash Flow"), -1)
 
                 # ROIC components (most recent)
-                financials["operating_income"] = self._safe_float_from_series(period_data.get("Operating Income"), 0)
-                financials["total_assets"] = self._safe_float_from_series(period_data.get("Total Assets"), 0)
-                financials["total_liabilities"] = self._safe_float_from_series(period_data.get("Total Liabilities"), 0)
+                financials["operating_income"] = self._safe_float_from_series(income_stmt.get("Operating Income"), -1)
+                financials["total_assets"] = self._safe_float_from_series(balance_sheet.get("Total Assets"), -1)
+                financials["total_liabilities"] = self._safe_float_from_series(balance_sheet.get("Total Liabilities"), -1)
                 financials["cash_equivalents"] = self._safe_float_from_series(
-                    period_data.get("Cash and Cash Equivalents"), 0
+                    balance_sheet.get("Cash and Cash Equivalents"), -1
                 )
-                financials["total_debt"] = self._safe_float_from_series(period_data.get("Total Debt"), 0)
+
+                # Calculate Total Debt from Short-Term + Long-Term Debt
+                short_term_debt = self._safe_float_from_series(balance_sheet.get("Short-Term Debt"), -1)
+                long_term_debt = self._safe_float_from_series(balance_sheet.get("Long-Term Debt"), -1)
+                financials["total_debt"] = (short_term_debt or 0) + (long_term_debt or 0) if (short_term_debt is not None or long_term_debt is not None) else None
 
                 # Additional balance sheet items
                 financials["stockholders_equity"] = self._safe_float_from_series(
-                    period_data.get("Total Stockholders Equity"), 0
+                    balance_sheet.get("Total Stockholders Equity"), -1
                 )
-                financials["revenue"] = self._safe_float_from_series(period_data.get("Revenue"), 0)
+                financials["revenue"] = self._safe_float_from_series(income_stmt.get("Revenue"), -1)
 
                 # Calculate current liabilities (for ROIC invested capital)
                 total_liab = financials.get("total_liabilities")
@@ -539,14 +565,16 @@ class GuruFocusTool(Tool):
                     financials["current_liabilities"] = total_liab - total_debt
 
                 # Store fiscal periods for reference
-                financials["fiscal_periods"] = fiscal_period[:10]  # Up to 10 years
+                # BUGFIX (2025-11-17): Take LAST 10 years (most recent), not first 10 (oldest)
+                financials["fiscal_periods"] = fiscal_period[-10:] if len(fiscal_period) > 10 else fiscal_period
 
                 # 10-year historical data for trends
+                # (Using income_stmt, balance_sheet, cashflow_stmt extracted above)
                 financials["historical"] = {
-                    "net_income": self._extract_series(period_data.get("Net Income"), 10),
-                    "revenue": self._extract_series(period_data.get("Revenue"), 10),
-                    "operating_income": self._extract_series(period_data.get("Operating Income"), 10),
-                    "free_cash_flow": self._extract_series(period_data.get("Free Cash Flow"), 10)
+                    "net_income": self._extract_series(income_stmt.get("Net Income"), 10),
+                    "revenue": self._extract_series(income_stmt.get("Revenue"), 10),
+                    "operating_income": self._extract_series(income_stmt.get("Operating Income"), 10),
+                    "free_cash_flow": self._extract_series(cashflow_stmt.get("Free Cash Flow"), 10)
                 }
 
         return {
@@ -586,8 +614,50 @@ class GuruFocusTool(Tool):
         metrics = {}
         financials = {}
 
+        # BUGFIX (2025-11-17): GuruFocus keyratios has data in "Fundamental" section
+        # Check for Fundamental section first (actual API structure)
+        if "Fundamental" in data:
+            fundamental = data["Fundamental"]
+
+            # Extract ROIC and other metrics from Fundamental section
+            # These are single values (most recent), not arrays
+            roic_value = self._safe_float(fundamental.get("ROIC %"))
+            roe_value = self._safe_float(fundamental.get("ROE %"))
+            roa_value = self._safe_float(fundamental.get("ROA %"))
+
+            # Convert percentages to decimals if needed
+            # GuruFocus returns as percentage (24.62 = 24.62%)
+            if roic_value is not None:
+                metrics["roic"] = roic_value / 100 if roic_value > 1 else roic_value
+            if roe_value is not None:
+                metrics["roe"] = roe_value / 100 if roe_value > 1 else roe_value
+            if roa_value is not None:
+                metrics["roa"] = roa_value / 100 if roa_value > 1 else roa_value
+
+            # Extract 10-year high/low if available
+            roic_10y_high = self._safe_float(fundamental.get("ROIC % (10y High)"))
+            roic_10y_low = self._safe_float(fundamental.get("ROIC % (10y Low)"))
+            if roic_10y_high is not None and roic_10y_low is not None:
+                # Calculate approximate 10-year average from high/low
+                metrics["roic_10y_avg"] = ((roic_10y_high + roic_10y_low) / 2) / 100 if (roic_10y_high + roic_10y_low) / 2 > 1 else (roic_10y_high + roic_10y_low) / 2
+
+        # Extract margin metrics from Profitability section
+        if "Profitability" in data:
+            profitability = data["Profitability"]
+
+            # Extract margin metrics (single values, most recent)
+            operating_margin = self._safe_float(profitability.get("Operating Margin %"))
+            net_margin = self._safe_float(profitability.get("Net Margin %"))
+
+            # Convert percentages to decimals if needed
+            if operating_margin is not None:
+                metrics["operating_margin"] = operating_margin / 100 if operating_margin > 1 else operating_margin
+            if net_margin is not None:
+                metrics["net_margin"] = net_margin / 100 if net_margin > 1 else net_margin
+
         # Extract profitability ratios (pre-calculated by GuruFocus)
-        if "profitability_ratios" in data:
+        # Fall back to this structure if Fundamental section not available
+        elif "profitability_ratios" in data:
             prof = data["profitability_ratios"]
 
             # Get most recent year (index 0)
@@ -875,7 +945,10 @@ class GuruFocusTool(Tool):
         if not series or not isinstance(series, list):
             return []
 
-        return [self._safe_float(v) for v in series[:max_length]]
+        # BUGFIX (2025-11-17): Take LAST max_length elements (most recent years), not first (oldest)
+        # This ensures historical arrays contain recent years (2015-2024) not ancient years (1985-1994)
+        sliced_series = series[-max_length:] if len(series) > max_length else series
+        return [self._safe_float(v) for v in sliced_series]
 
     def _error(self, message: str) -> Dict[str, Any]:
         """

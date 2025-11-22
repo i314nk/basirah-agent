@@ -32,7 +32,8 @@ class LLMConfig:
             "description": "Claude 4 Sonnet - Best quality, realistic tests",
             "cost": "$$$ (High)",
             "speed": "Fast",
-            "quality": "Excellent (95%)"
+            "quality": "Excellent (95%)",
+            "knowledge_cutoff": "April 2024"
         },
         "claude-3.5-sonnet": {
             "provider": LLMProvider.CLAUDE,
@@ -40,7 +41,37 @@ class LLMConfig:
             "description": "Claude 3.5 Sonnet - Previous generation",
             "cost": "$$$ (High)",
             "speed": "Fast",
-            "quality": "Excellent (92%)"
+            "quality": "Excellent (92%)",
+            "knowledge_cutoff": "April 2024"
+        },
+
+        # Kimi K2 models (Moonshot AI)
+        "kimi-k2-thinking": {
+            "provider": LLMProvider.KIMI,
+            "model_id": "kimi-k2-thinking",
+            "description": "Kimi K2 Thinking - Best reasoning quality",
+            "cost": "$$ (Medium)",
+            "speed": "Moderate",
+            "quality": "Excellent (90%)",
+            "knowledge_cutoff": "July 2024"
+        },
+        "kimi-k2-thinking-turbo": {
+            "provider": LLMProvider.KIMI,
+            "model_id": "kimi-k2-thinking-turbo",
+            "description": "Kimi K2 Thinking Turbo - Fast reasoning",
+            "cost": "$$ (Medium)",
+            "speed": "Fast",
+            "quality": "Very Good (85%)",
+            "knowledge_cutoff": "July 2024"
+        },
+        "kimi-k2-turbo": {
+            "provider": LLMProvider.KIMI,
+            "model_id": "kimi-k2-turbo-preview",
+            "description": "Kimi K2 Turbo - Fastest, less reasoning",
+            "cost": "$ (Low)",
+            "speed": "Very Fast",
+            "quality": "Good (80%)",
+            "knowledge_cutoff": "July 2024"
         }
     }
 

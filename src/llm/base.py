@@ -14,6 +14,7 @@ from enum import Enum
 class LLMProvider(str, Enum):
     """Available LLM providers."""
     CLAUDE = "claude"
+    KIMI = "kimi"
     OPENAI = "openai"  # Future support
 
 
@@ -110,6 +111,38 @@ class BaseLLMProvider(ABC):
         """
         costs = self.get_cost_per_token()
         return (tokens_input * costs['input']) + (tokens_output * costs['output'])
+
+    @abstractmethod
+    def run_react_loop(
+        self,
+        system_prompt: str,
+        initial_message: str,
+        tools: Dict[str, Any],
+        tool_executor: callable,
+        max_iterations: int = 30
+    ) -> Dict[str, Any]:
+        """
+        Run ReAct (Reasoning + Acting) loop with tool calling.
+
+        Each provider implements this with their native tool calling protocol:
+        - Claude: Extended Thinking + Native Tool Use API
+        - Kimi: OpenAI-compatible tool calling
+        - Others: Provider-specific implementation
+
+        Args:
+            system_prompt: System prompt defining agent personality/task
+            initial_message: Initial user message to start analysis
+            tools: Tool definitions in provider-specific format
+            tool_executor: Callback function(tool_name, tool_input) -> result dict
+            max_iterations: Maximum ReAct iterations (default 30)
+
+        Returns:
+            Dict with:
+                - success: bool - Whether analysis completed successfully
+                - thesis: str - Final analysis text from agent
+                - metadata: dict - Usage stats (iterations, tool_calls, tokens, cost)
+        """
+        pass
 
     @property
     def provider_name(self) -> str:

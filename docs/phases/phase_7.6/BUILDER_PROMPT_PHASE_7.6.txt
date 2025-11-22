@@ -1,0 +1,1728 @@
+# BUILDER PROMPT: Phase 7.6 - Dual-Agent Architecture with Iterative Refinement
+
+**Project:** basīrah Warren Buffett AI Agent
+**Phase:** 7.6 - Architectural Simplification & Quality Enhancement
+**Priority:** HIGH (Replaces Phase 7.5 - Better Approach)
+**Estimated Time:** 6-8 hours
+**Prerequisites:** Phase 6C.1 (Database) ✅ | Phase 7 (LLM Providers) ✅ | Phase 8 (Batch Processing) ✅
+
+---
+
+## EXECUTIVE SUMMARY
+
+Phase 7.6 **completely reimagines** basīrah's architecture by removing custom tools and implementing a **dual-agent system** where:
+
+1. **Warren Agent (Analyst)** - Creates analysis using native LLM tools
+2. **Validator Agent** - Provides iterative critique to improve analysis
+
+**Key Insight:** Modern LLMs (Claude Sonnet 4, GPT-5, Kimi K2) already have native capabilities to:
+- Search the web
+- Fetch SEC filings  
+- Calculate financial metrics
+- Cite sources
+
+**Why rebuild these as custom tools?** Instead, let LLMs use their native tools and add a **validation layer** to ensure quality.
+
+---
+
+## PROBLEM STATEMENT
+
+### **Current Architecture Issues**
+
+**1. Custom Tools are Redundant:**
+```python
+# We built this:
+calculator_tool.py - Calculates Owner Earnings, ROIC, DCF
+gurufocus_tool.py - Fetches financial data from GuruFocus API
+sec_filing_tool.py - Downloads SEC filings from EDGAR
+web_search_tool.py - Wrapper around Brave Search API
+
+# But LLMs already have:
+- code_interpreter (can calculate anything)
+- web_search (can search)
+- web_fetch (can download filings)
+```
+
+**Why maintain custom tools when LLMs do this natively?**
+
+**2. Non-Deterministic Results:**
+```
+Run 1: FDS Intrinsic Value = $264.60 ✅ (used calculator_tool)
+Run 2: FDS Intrinsic Value = $220.50 ❌ (skipped tools, hallucinated)
+
+20% variance on same company!
+```
+
+**Root cause:** Agent optionally uses tools. Sometimes skips calculations.
+
+**3. Complex Maintenance:**
+```
+Current codebase for tools:
+- calculator_tool.py: 200 lines
+- gurufocus_tool.py: 150 lines
+- sec_filing_tool.py: 300 lines
+- web_search_tool.py: 100 lines
+- ReAct loop orchestration: 500 lines
+Total: ~1,250 lines to maintain
+
+As APIs change, tools break.
+As Python evolves, tools need updates.
+```
+
+---
+
+## NEW ARCHITECTURE
+
+### **Dual-Agent with Iterative Refinement**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              USER REQUEST                           │
+│          "Analyze FDS deep dive"                    │
+└─────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────┐
+│         WARREN AGENT (Analyst)                      │
+│                                                     │
+│  Uses NATIVE LLM tools:                            │
+│  ├─ web_search: Find SEC filings                   │
+│  ├─ web_fetch: Read 10-K documents                 │
+│  └─ code_interpreter: Calculate metrics            │
+│                                                     │
+│  Produces: DRAFT ANALYSIS                          │
+└─────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────┐
+│         VALIDATOR AGENT (Editor)                    │
+│                                                     │
+│  Reviews draft and provides DETAILED CRITIQUE:      │
+│  ├─ Methodology correct? (OCF - CapEx?)            │
+│  ├─ Sources cited properly?                        │
+│  ├─ Calculations shown?                            │
+│  ├─ Buffett principles followed?                   │
+│  └─ Any hallucinations?                            │
+│                                                     │
+│  Produces: ACTIONABLE FEEDBACK                      │
+└─────────────────────────────────────────────────────┘
+                        ↓
+              ┌─────────────────┐
+              │ Approved? ✅     │
+              └─────────────────┘
+                     Yes ↓               No ↓
+                                         
+┌─────────────────────┐          ┌──────────────────────┐
+│  SAVE TO DATABASE   │          │  WARREN AGENT        │
+│  (Final Analysis)   │          │  Improves Analysis   │
+└─────────────────────┘          │  (addresses issues)  │
+                                 └──────────────────────┘
+                                          ↓
+                                  Back to Validator
+                                  (max 3 iterations)
+```
+
+**Key Difference from Current:**
+- ❌ No custom tools to maintain
+- ✅ Uses native LLM capabilities
+- ✅ Validation ensures quality
+- ✅ Iterative refinement catches errors
+- ✅ Deterministic through validation gates
+
+---
+
+## BENEFITS
+
+### **1. Massive Code Reduction**
+
+```
+BEFORE Phase 7.6:
+src/tools/
+├─ calculator_tool.py (200 lines) ❌ DELETE
+├─ gurufocus_tool.py (150 lines) ❌ DELETE
+├─ sec_filing_tool.py (300 lines) ❌ DELETE
+└─ web_search_tool.py (100 lines) ❌ DELETE
+
+src/agent/buffett_agent.py (500 lines ReAct) ❌ REPLACE
+
+Total: ~1,250 lines
+
+AFTER Phase 7.6:
+src/agent/buffett_agent.py (~300 lines) ✅ NEW
+
+Total: ~300 lines
+
+76% code reduction! 🎉
+```
+
+### **2. Future-Proof**
+
+```
+When Claude releases Claude Sonnet 5:
+- Better native tools automatically ✅
+- No code changes needed ✅
+
+When GPT-6 releases:
+- Improved capabilities automatically ✅
+- Just switch provider ✅
+
+When new LLMs launch:
+- Plug and play ✅
+- No tool porting needed ✅
+```
+
+### **3. Quality Through Validation**
+
+```
+Without Validator:
+- Agent might hallucinate ❌
+- No methodology enforcement ❌
+- 20% variance ❌
+
+With Validator + Iteration:
+- Hallucinations caught ✅
+- Methodology enforced ✅
+- Multiple chances to fix ✅
+- <1% variance ✅
+```
+
+### **4. Flexible LLM Combinations**
+
+```python
+# Best analysis + Best validation
+agent = BuffettAgent(
+    analyst_provider="claude-sonnet-4",
+    validator_provider="gpt-5"
+)
+
+# Cost-optimized
+agent = BuffettAgent(
+    analyst_provider="claude-sonnet-4",
+    validator_provider="claude-haiku-4"
+)
+
+# Experimental
+agent = BuffettAgent(
+    analyst_provider="kimi-k2",
+    validator_provider="claude-sonnet-4"
+)
+
+# Mix and match ANY combination!
+```
+
+---
+
+## IMPLEMENTATION
+
+### Files to DELETE (5 files)
+
+```bash
+# Remove all custom tools
+rm src/tools/calculator_tool.py
+rm src/tools/gurufocus_tool.py
+rm src/tools/sec_filing_tool.py
+rm src/tools/web_search_tool.py
+rm src/tools/__init__.py
+
+# Note: Keep src/tools/ directory if other tools exist
+# Otherwise: rm -rf src/tools/
+```
+
+### Files to MODIFY (2 files)
+
+1. **src/agent/buffett_agent.py** - Complete rewrite (see below)
+2. **src/batch/batch_processor.py** - Minimal changes (agent interface same)
+
+### Files to CREATE (1 file)
+
+1. **src/agent/prompts.py** - Prompt templates for analyst and validator
+
+---
+
+## DETAILED IMPLEMENTATION
+
+### File 1: Prompt Templates
+
+**Create:** `src/agent/prompts.py`
+
+```python
+"""
+Prompt templates for Warren Agent (Analyst) and Validator Agent.
+"""
+
+def get_analyst_prompt(
+    ticker: str,
+    deep_dive: bool,
+    years_to_analyze: int,
+    previous_critique: dict = None
+) -> str:
+    """
+    Build prompt for Warren Agent to create/improve analysis.
+    
+    Args:
+        ticker: Company ticker
+        deep_dive: Whether to do deep dive or quick screen
+        years_to_analyze: Number of years to analyze (5-10)
+        previous_critique: Validator feedback from previous iteration (if any)
+    """
+    
+    analysis_type = "deep dive" if deep_dive else "quick screen"
+    
+    base_prompt = f"""
+You are Warren Buffett analyzing {ticker} for investment.
+
+YOUR TASK:
+Perform a {analysis_type} analysis ({years_to_analyze} years) following strict Buffett methodology.
+
+CRITICAL: You will be reviewed by a validator who checks your work.
+Your analysis must be thorough, well-sourced, and follow exact Buffett principles.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: GATHER DATA (Use Your Native Tools)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use your native capabilities:
+1. **web_search**: Find latest SEC 10-K filing for {ticker}
+2. **web_fetch**: Download and read the complete 10-K
+3. **web_search**: Find financial data (revenue, cash flows, balance sheet)
+4. **code_interpreter**: Calculate all financial metrics
+
+CRITICAL: Cite EVERY data source with specific URLs!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2: OWNER EARNINGS CALCULATION (MANDATORY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Warren Buffett's definition:
+"Owner Earnings = Operating Cash Flow - Capital Expenditures"
+
+DO NOT use Net Income!
+DO NOT estimate!
+MUST show calculation:
+
+Example:
+{{
+  "owner_earnings": {{
+    "operating_cash_flow": 700.0,
+    "capex": 86.0,
+    "calculation": "700.0 - 86.0 = 614.0",
+    "result": 614.0,
+    "source": "SEC 10-K FY2024, Cash Flow Statement, Page 45"
+  }}
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3: REQUIRED CALCULATIONS (Show All Work)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use code_interpreter to calculate:
+
+1. **Owner Earnings** (OCF - CapEx)
+2. **Return on Invested Capital (ROIC)**
+   - ROIC = NOPAT / Invested Capital
+   - Show how you calculated NOPAT
+   - Show how you calculated Invested Capital
+
+3. **DCF Intrinsic Value**
+   - Use Owner Earnings as base cash flow
+   - Growth rate: 3-7% (be conservative!)
+   - Discount rate: 10% minimum
+   - Terminal growth: 2-3% (long-term GDP growth)
+   - Show year-by-year projections
+   - Show present value calculations
+
+4. **Intrinsic Value Per Share**
+   - Enterprise Value from DCF
+   - Subtract debt
+   - Add cash
+   - Divide by diluted shares
+
+5. **Margin of Safety**
+   - (Intrinsic Value - Current Price) / Intrinsic Value
+   - Express as percentage
+
+CRITICAL: Show calculation steps for validator to verify!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4: BUFFETT METHODOLOGY (MANDATORY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. **Competitive Moat Analysis**
+   - What is the company's durable competitive advantage?
+   - Brand value? Network effects? Cost advantages?
+   - Can competitors easily replicate?
+   - How wide is the moat? (narrow/moderate/wide)
+
+2. **Management Quality**
+   - Capital allocation track record
+   - Insider ownership
+   - Compensation structure
+   - Integrity and competence
+
+3. **Financial Strength**
+   - Debt levels (Debt/Equity ratio)
+   - Interest coverage
+   - Free cash flow consistency
+   - Return on equity trends
+
+4. **Business Predictability**
+   - Earnings stability over {years_to_analyze} years
+   - Revenue growth consistency
+   - Ability to forecast future 5-10 years
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5: INVESTMENT DECISION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decision Matrix:
+- **BUY**: Margin of Safety ≥ 25%, Wide moat, Excellent management
+  - HIGH conviction: MoS ≥ 40%, Very wide moat
+  - MODERATE conviction: MoS 25-40%, Wide moat
+  - LOW conviction: MoS 25-30%, Moderate moat
+
+- **WATCH**: Margin of Safety 10-25%, OR good business but fairly valued
+  
+- **AVOID**: Margin of Safety < 10%, OR weak moat, OR poor management
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT (JSON)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Respond in this EXACT JSON structure:
+
+{{
+  "ticker": "{ticker}",
+  "company_name": "Full Company Name",
+  "analysis_date": "2025-11-09",
+  "analysis_type": "{analysis_type}",
+  "years_analyzed": {years_to_analyze},
+  
+  "decision": "BUY|WATCH|AVOID",
+  "conviction": "HIGH|MODERATE|LOW",
+  
+  "valuation": {{
+    "current_price": 262.60,
+    "intrinsic_value": 264.60,
+    "margin_of_safety_percent": 0.8
+  }},
+  
+  "owner_earnings": {{
+    "operating_cash_flow": 700.0,
+    "capex": 86.0,
+    "calculation": "700.0 - 86.0 = 614.0",
+    "result": 614.0,
+    "source": "SEC 10-K FY2024, page 45"
+  }},
+  
+  "roic": {{
+    "value": 55.2,
+    "nopat": 450.0,
+    "invested_capital": 815.0,
+    "calculation": "450.0 / 815.0 = 0.552",
+    "source": "Calculated from 10-K balance sheet and income statement"
+  }},
+  
+  "dcf_valuation": {{
+    "enterprise_value": 9890000000,
+    "assumptions": {{
+      "growth_rate": 0.05,
+      "discount_rate": 0.10,
+      "terminal_growth": 0.025
+    }},
+    "cash_flows": [614, 645, 677, 711, 746, 783, 822, 863, 906, 951],
+    "present_values": [558, 533, 509, 486, 464, 442, 422, 402, 383, 365],
+    "terminal_value": 4500000000,
+    "terminal_pv": 1735000000,
+    "calculation_details": "Sum of PVs + Terminal PV = Enterprise Value"
+  }},
+  
+  "competitive_moat": {{
+    "width": "wide|moderate|narrow|none",
+    "sources": ["brand power", "network effects", "cost advantages"],
+    "durability": "high|medium|low",
+    "description": "Detailed moat analysis..."
+  }},
+  
+  "management_quality": {{
+    "rating": "excellent|good|adequate|poor",
+    "capital_allocation": "Discussion...",
+    "insider_ownership": "15% of shares",
+    "compensation": "Reasonable, aligned with shareholders"
+  }},
+  
+  "financial_strength": {{
+    "debt_to_equity": 0.5,
+    "interest_coverage": 15.0,
+    "fcf_consistency": "high|medium|low",
+    "rating": "strong|adequate|weak"
+  }},
+  
+  "risks": [
+    "Risk 1: Description",
+    "Risk 2: Description",
+    "Risk 3: Description"
+  ],
+  
+  "investment_thesis": "Comprehensive 2-3 paragraph investment thesis explaining why BUY/WATCH/AVOID...",
+  
+  "sources": [
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001013237&type=10-K",
+    "https://www.sec.gov/Archives/edgar/data/1013237/000101323724000141/fds-20240831.htm",
+    "Additional sources..."
+  ]
+}}
+"""
+
+    # If this is an improvement iteration, add previous critique
+    if previous_critique:
+        critique_section = f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VALIDATOR FEEDBACK FROM PREVIOUS ITERATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The validator reviewed your previous analysis and found these issues:
+
+OVERALL ASSESSMENT:
+{previous_critique.get('overall_assessment', 'Issues found')}
+
+SCORE: {previous_critique.get('score', 0)}/100
+
+ISSUES TO FIX:
+{_format_critique_issues(previous_critique.get('issues', []))}
+
+YOUR TASK:
+Address EVERY issue above. Don't just acknowledge - actually FIX them!
+- Add missing sources
+- Correct wrong calculations
+- Strengthen weak analysis
+- Add missing methodology elements
+
+The validator will check if you fixed these issues.
+"""
+        return base_prompt + critique_section
+    
+    return base_prompt
+
+
+def _format_critique_issues(issues: list) -> str:
+    """Format critique issues for display."""
+    if not issues:
+        return "No issues found."
+    
+    formatted = []
+    for i, issue in enumerate(issues, 1):
+        severity = issue.get('severity', 'unknown').upper()
+        category = issue.get('category', 'unknown')
+        description = issue.get('description', '')
+        how_to_fix = issue.get('how_to_fix', '')
+        
+        formatted.append(f"""
+{i}. [{severity}] {category}
+   Problem: {description}
+   How to fix: {how_to_fix}
+""")
+    
+    return "\n".join(formatted)
+
+
+def get_validator_prompt(analysis: dict, iteration: int) -> str:
+    """
+    Build prompt for Validator Agent to critique analysis.
+    
+    Args:
+        analysis: The analysis to validate
+        iteration: Current iteration number (0-based)
+    """
+    
+    import json
+    
+    prompt = f"""
+You are a strict investment analysis editor reviewing iteration {iteration + 1}.
+
+Your role is to provide DETAILED, ACTIONABLE critique to improve the analysis.
+Be tough but constructive. The goal is a perfect Buffett-quality analysis.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ANALYSIS TO REVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{json.dumps(analysis, indent=2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR VALIDATION CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. OWNER EARNINGS METHODOLOGY (CRITICAL)
+   □ Formula: Operating Cash Flow - CapEx (NOT Net Income)?
+   □ Both OCF and CapEx values provided?
+   □ Calculation shown explicitly?
+   □ Source cited (specific 10-K page)?
+   □ Result makes sense (positive, reasonable)?
+
+2. CALCULATIONS (CRITICAL)
+   □ ROIC calculated correctly (NOPAT / Invested Capital)?
+   □ DCF shown step-by-step (year-by-year cash flows)?
+   □ Discount rate appropriate (≥ 10%)?
+   □ Growth rate conservative (3-7%)?
+   □ Terminal growth reasonable (2-3%)?
+   □ Intrinsic value per share calculation shown?
+   □ Margin of safety percentage correct?
+
+3. SOURCES (CRITICAL)
+   □ SEC filing URLs provided?
+   □ Specific page numbers cited?
+   □ Financial data sources named?
+   □ All key numbers have sources?
+   □ Sources appear real (not hallucinated)?
+
+4. BUFFETT METHODOLOGY (IMPORTANT)
+   □ Competitive moat analyzed (not just mentioned)?
+   □ Moat width assessed (wide/moderate/narrow)?
+   □ Management quality evaluated?
+   □ Capital allocation discussed?
+   □ Financial strength assessed?
+   □ Business predictability discussed?
+
+5. DECISION LOGIC (IMPORTANT)
+   □ Decision matches margin of safety?
+     - BUY requires ≥ 25% MoS
+     - WATCH for 10-25% MoS
+     - AVOID for < 10% MoS
+   □ Conviction level justified?
+   □ Risks identified?
+
+6. QUALITY (IMPORTANT)
+   □ Investment thesis clear and compelling?
+   □ Analysis depth appropriate for type?
+   □ No obvious hallucinations?
+   □ Professional quality?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR CRITIQUE GUIDELINES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Be SPECIFIC and ACTIONABLE:
+- ❌ BAD: "Analysis needs improvement"
+- ✅ GOOD: "DCF growth rate of 8% is too aggressive. Use 5% based on historical average."
+
+- ❌ BAD: "Missing sources"
+- ✅ GOOD: "Owner Earnings calculation needs source. Add specific 10-K page number for OCF and CapEx."
+
+- ❌ BAD: "Moat analysis weak"
+- ✅ GOOD: "Competitive moat section only mentions 'brand'. Analyze: 1) How strong is brand vs competitors? 2) Can competitors replicate? 3) Evidence of pricing power?"
+
+Prioritize by SEVERITY:
+- CRITICAL: Methodology errors, missing calculations, no sources
+- IMPORTANT: Weak analysis, missing Buffett elements
+- MINOR: Formatting, wording improvements
+
+If iteration {iteration + 1} >= 2:
+- Check if previous issues were actually fixed
+- Don't repeat issues that were addressed
+- Focus on new issues or persistent problems
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT (JSON)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{{
+  "approved": true/false,
+  "score": 0-100,
+  
+  "overall_assessment": "Brief summary of analysis quality and main issues",
+  
+  "strengths": [
+    "What's good about this analysis (be specific)",
+    "Another strength"
+  ],
+  
+  "issues": [
+    {{
+      "severity": "critical|important|minor",
+      "category": "methodology|calculations|sources|moat|management|decision|quality",
+      "description": "Specific issue description",
+      "how_to_fix": "Actionable steps to fix this issue"
+    }}
+  ],
+  
+  "methodology_correct": true/false,
+  "calculations_verified": true/false,
+  "sources_adequate": true/false,
+  "buffett_principles_followed": true/false,
+  
+  "recommendation": "approve|revise|reject"
+}}
+
+DECISION CRITERIA:
+- APPROVE: Score ≥ 85, no critical issues, methodology correct
+- REVISE: Score 50-84, fixable issues identified
+- REJECT: Score < 50, fundamental methodology errors
+
+Be tough! Warren Buffett's reputation is on the line.
+Only approve truly excellent analysis.
+"""
+    
+    return prompt
+
+
+__all__ = [
+    'get_analyst_prompt',
+    'get_validator_prompt'
+]
+```
+
+---
+
+### File 2: New BuffettAgent (Complete Rewrite)
+
+**Modify:** `src/agent/buffett_agent.py`
+
+```python
+"""
+Warren Buffett AI Agent - Dual-Agent Architecture with Iterative Refinement
+
+Phase 7.6: Simplified architecture using native LLM capabilities.
+
+Architecture:
+1. Warren Agent (Analyst) - Creates analysis using native tools
+2. Validator Agent - Provides iterative critique for improvement
+
+No custom tools needed - leverages native LLM capabilities:
+- web_search (search for SEC filings, financial data)
+- web_fetch (download and read documents)
+- code_interpreter (calculate financial metrics)
+"""
+
+import logging
+import json
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+
+from src.llm.llm_provider import LLMProvider
+from src.storage.analysis_storage import AnalysisStorage
+from src.agent.prompts import get_analyst_prompt, get_validator_prompt
+
+logger = logging.getLogger(__name__)
+
+
+class ValidationError(Exception):
+    """Raised when analysis fails validation after max iterations."""
+    pass
+
+
+class BuffettAgent:
+    """
+    Warren Buffett investment analysis agent with quality validation.
+    
+    Uses dual-agent architecture:
+    - Analyst: Creates complete analysis using native LLM tools
+    - Validator: Reviews and critiques analysis for improvement
+    
+    Iterative refinement ensures high-quality, validated analyses.
+    """
+    
+    def __init__(
+        self,
+        analyst_provider: str = "claude",
+        validator_provider: str = "claude",
+        max_iterations: int = 3
+    ):
+        """
+        Initialize BuffettAgent.
+        
+        Args:
+            analyst_provider: LLM provider for Warren Agent (analyst)
+            validator_provider: LLM provider for Validator Agent
+            max_iterations: Maximum refinement iterations (default: 3)
+        """
+        self.analyst = LLMProvider.get_provider(analyst_provider)
+        self.validator = LLMProvider.get_provider(validator_provider)
+        self.storage = AnalysisStorage()
+        self.max_iterations = max_iterations
+        
+        logger.info(
+            f"BuffettAgent initialized:\n"
+            f"  Analyst: {analyst_provider}\n"
+            f"  Validator: {validator_provider}\n"
+            f"  Max iterations: {max_iterations}"
+        )
+    
+    def analyze_company(
+        self,
+        ticker: str,
+        deep_dive: bool = False,
+        years_to_analyze: int = 8,
+        save_to_db: bool = True,
+        metadata: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze company using dual-agent iterative refinement.
+        
+        Process:
+        1. Warren Agent creates draft analysis
+        2. Validator reviews and provides critique
+        3. If not approved, Warren Agent improves analysis
+        4. Repeat until approved or max iterations reached
+        5. Save approved analysis to database
+        
+        Args:
+            ticker: Company ticker symbol
+            deep_dive: Whether to do deep dive (True) or quick screen (False)
+            years_to_analyze: Number of years to analyze (5-10)
+            save_to_db: Whether to save to database (default: True)
+            metadata: Additional metadata to save with analysis
+            
+        Returns:
+            Complete validated analysis
+            
+        Raises:
+            ValidationError: If analysis not approved after max iterations
+        """
+        logger.info(
+            f"\n{'='*60}\n"
+            f"Starting Analysis: {ticker}\n"
+            f"Type: {'Deep Dive' if deep_dive else 'Quick Screen'}\n"
+            f"Years: {years_to_analyze}\n"
+            f"{'='*60}"
+        )
+        
+        analysis = None
+        conversation_history = []
+        start_time = datetime.now()
+        
+        # Iterative refinement loop
+        for iteration in range(self.max_iterations):
+            logger.info(f"\n🔄 Iteration {iteration + 1}/{self.max_iterations}")
+            
+            # Step 1: Warren Agent creates or improves analysis
+            if iteration == 0:
+                # First draft
+                logger.info("📝 Warren Agent: Creating draft analysis...")
+                analysis = self._create_analysis(
+                    ticker=ticker,
+                    deep_dive=deep_dive,
+                    years_to_analyze=years_to_analyze
+                )
+                
+                conversation_history.append({
+                    "iteration": iteration + 1,
+                    "role": "analyst",
+                    "action": "draft",
+                    "timestamp": datetime.now().isoformat()
+                })
+            else:
+                # Improvement based on validator feedback
+                previous_critique = conversation_history[-1]['content']
+                
+                logger.info("📝 Warren Agent: Improving analysis based on feedback...")
+                logger.info(f"   Addressing {len(previous_critique.get('issues', []))} issues")
+                
+                analysis = self._improve_analysis(
+                    ticker=ticker,
+                    deep_dive=deep_dive,
+                    years_to_analyze=years_to_analyze,
+                    previous_analysis=analysis,
+                    previous_critique=previous_critique
+                )
+                
+                conversation_history.append({
+                    "iteration": iteration + 1,
+                    "role": "analyst",
+                    "action": "revision",
+                    "timestamp": datetime.now().isoformat()
+                })
+            
+            # Step 2: Validator reviews analysis
+            logger.info("✓ Validator: Reviewing analysis...")
+            
+            critique = self._validate_analysis(analysis, iteration)
+            
+            conversation_history.append({
+                "iteration": iteration + 1,
+                "role": "validator",
+                "action": "critique",
+                "content": critique,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Step 3: Check if approved
+            if critique.get('approved', False):
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                logger.info(
+                    f"\n✅ Analysis APPROVED after {iteration + 1} iteration(s)!\n"
+                    f"   Score: {critique.get('score', 0)}/100\n"
+                    f"   Duration: {duration:.1f}s"
+                )
+                
+                # Add validation metadata
+                analysis['validation'] = {
+                    'approved': True,
+                    'iterations': iteration + 1,
+                    'final_score': critique.get('score', 0),
+                    'validator_assessment': critique.get('overall_assessment', ''),
+                    'strengths': critique.get('strengths', []),
+                    'duration_seconds': duration
+                }
+                
+                analysis['metadata'] = {
+                    'analyst_provider': self.analyst.name,
+                    'validator_provider': self.validator.name,
+                    'iterations': iteration + 1,
+                    'created_at': datetime.now().isoformat(),
+                    **(metadata or {})
+                }
+                
+                # Save to database
+                if save_to_db:
+                    try:
+                        db_id = self.storage.save_analysis(
+                            analysis=analysis,
+                            metadata=analysis['metadata']
+                        )
+                        logger.info(f"💾 Saved to database (ID: {db_id})")
+                        analysis['db_id'] = db_id
+                    except Exception as e:
+                        logger.error(f"Failed to save to database: {e}")
+                
+                return analysis
+            
+            # Step 4: Not approved - check if making progress
+            logger.warning(
+                f"⚠️  Analysis NOT approved (iteration {iteration + 1})\n"
+                f"   Score: {critique.get('score', 0)}/100\n"
+                f"   Issues: {len(critique.get('issues', []))}"
+            )
+            
+            for issue in critique.get('issues', []):
+                severity = issue.get('severity', 'unknown').upper()
+                category = issue.get('category', 'unknown')
+                description = issue.get('description', '')
+                logger.warning(f"   [{severity}] {category}: {description}")
+            
+            # Check if we're making progress
+            if iteration > 0:
+                prev_critique = conversation_history[-3]['content']  # Two entries back
+                if not self._check_progress(prev_critique, critique):
+                    logger.error(
+                        "❌ No progress made between iterations.\n"
+                        "   Analyst may be stuck or unable to fix issues."
+                    )
+                    # Continue anyway - give all iterations a chance
+        
+        # Max iterations reached without approval
+        duration = (datetime.now() - start_time).total_seconds()
+        
+        error_msg = (
+            f"Analysis of {ticker} NOT approved after {self.max_iterations} iterations.\n"
+            f"Duration: {duration:.1f}s\n"
+            f"Final score: {critique.get('score', 0)}/100\n"
+            f"Remaining issues:\n"
+        )
+        
+        for issue in critique.get('issues', []):
+            error_msg += (
+                f"  [{issue.get('severity', '').upper()}] "
+                f"{issue.get('category', '')}: "
+                f"{issue.get('description', '')}\n"
+            )
+        
+        logger.error(f"❌ {error_msg}")
+        
+        raise ValidationError(error_msg)
+    
+    def _create_analysis(
+        self,
+        ticker: str,
+        deep_dive: bool,
+        years_to_analyze: int
+    ) -> Dict[str, Any]:
+        """Warren Agent creates draft analysis."""
+        
+        prompt = get_analyst_prompt(
+            ticker=ticker,
+            deep_dive=deep_dive,
+            years_to_analyze=years_to_analyze,
+            previous_critique=None  # First draft
+        )
+        
+        # Call Warren Agent with native tools enabled
+        response = self.analyst.messages_create(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=16000,
+            temperature=0.0  # Deterministic
+        )
+        
+        # Parse JSON response
+        try:
+            analysis = self._parse_response(response.content[0].text, ticker)
+            return analysis
+        except Exception as e:
+            logger.error(f"Failed to parse analyst response: {e}")
+            logger.error(f"Response: {response.content[0].text[:500]}...")
+            raise
+    
+    def _improve_analysis(
+        self,
+        ticker: str,
+        deep_dive: bool,
+        years_to_analyze: int,
+        previous_analysis: Dict,
+        previous_critique: Dict
+    ) -> Dict[str, Any]:
+        """Warren Agent improves analysis based on validator critique."""
+        
+        prompt = get_analyst_prompt(
+            ticker=ticker,
+            deep_dive=deep_dive,
+            years_to_analyze=years_to_analyze,
+            previous_critique=previous_critique  # Include feedback
+        )
+        
+        # Call Warren Agent with native tools enabled
+        response = self.analyst.messages_create(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=16000,
+            temperature=0.0
+        )
+        
+        # Parse improved analysis
+        try:
+            analysis = self._parse_response(response.content[0].text, ticker)
+            return analysis
+        except Exception as e:
+            logger.error(f"Failed to parse improved analysis: {e}")
+            raise
+    
+    def _validate_analysis(
+        self,
+        analysis: Dict,
+        iteration: int
+    ) -> Dict[str, Any]:
+        """Validator reviews analysis and provides critique."""
+        
+        prompt = get_validator_prompt(analysis, iteration)
+        
+        # Call Validator Agent
+        response = self.validator.messages_create(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=8000,
+            temperature=0.0
+        )
+        
+        # Parse validation result
+        try:
+            critique = self._parse_response(response.content[0].text, "validation")
+            return critique
+        except Exception as e:
+            logger.error(f"Failed to parse validator response: {e}")
+            raise
+    
+    def _parse_response(self, text: str, context: str) -> Dict:
+        """Parse JSON response from LLM."""
+        
+        # Try to find JSON in response
+        import re
+        
+        # Look for JSON between ```json and ``` or just find {...}
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if json_match:
+            json_text = json_match.group(1)
+        else:
+            # Try to find raw JSON object
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(0)
+            else:
+                raise ValueError(f"No JSON found in response for {context}")
+        
+        # Parse JSON
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error for {context}: {e}")
+            logger.error(f"Text: {json_text[:500]}...")
+            raise
+    
+    def _check_progress(
+        self,
+        previous_critique: Dict,
+        current_critique: Dict
+    ) -> bool:
+        """Check if analysis improved between iterations."""
+        
+        prev_score = previous_critique.get('score', 0)
+        curr_score = current_critique.get('score', 0)
+        prev_issues = len(previous_critique.get('issues', []))
+        curr_issues = len(current_critique.get('issues', []))
+        
+        # Improved if score increased OR issues decreased
+        score_improved = curr_score > prev_score
+        issues_decreased = curr_issues < prev_issues
+        
+        improved = score_improved or issues_decreased
+        
+        if improved:
+            logger.info(
+                f"   📈 Progress: Score {prev_score}→{curr_score}, "
+                f"Issues {prev_issues}→{curr_issues}"
+            )
+        else:
+            logger.warning(
+                f"   📉 No progress: Score {prev_score}→{curr_score}, "
+                f"Issues {prev_issues}→{curr_issues}"
+            )
+        
+        return improved
+
+
+__all__ = ['BuffettAgent', 'ValidationError']
+```
+
+---
+
+### File 3: Update LLM Provider Interface
+
+**Modify:** `src/llm/llm_provider.py`
+
+Ensure all providers expose a consistent interface that supports native tools:
+
+```python
+# Add to LLMProvider base class
+
+class LLMProvider:
+    """Base class for LLM providers."""
+    
+    def messages_create(
+        self,
+        messages: List[Dict],
+        max_tokens: int = 4000,
+        temperature: float = 0.0,
+        **kwargs
+    ):
+        """
+        Create completion with messages.
+        
+        All providers must support this interface.
+        Native tools (web_search, web_fetch, code_interpreter) are
+        automatically enabled for providers that support them.
+        """
+        raise NotImplementedError
+```
+
+**For Claude Provider:**
+```python
+class ClaudeProvider(LLMProvider):
+    """Claude provider with native tool support."""
+    
+    def messages_create(self, messages, max_tokens=4000, temperature=0.0, **kwargs):
+        """Call Claude with native tools enabled."""
+        
+        return self.client.messages.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            # Native tools automatically available:
+            # - web_search
+            # - web_fetch  
+            # - bash (for calculations)
+            **kwargs
+        )
+```
+
+---
+
+### File 4: Update Batch Processor (Minimal Changes)
+
+**Modify:** `src/batch/batch_processor.py`
+
+The batch processor interface stays the same! Just using new agent internally:
+
+```python
+# In BatchProcessor.__init__()
+
+def __init__(self, protocol: BatchProtocol, storage: AnalysisStorage):
+    """Initialize batch processor."""
+    self.protocol = protocol
+    self.storage = storage
+    
+    # Initialize agent with dual-agent architecture
+    self.agent = BuffettAgent(
+        analyst_provider="claude",  # TODO: Make configurable
+        validator_provider="claude",
+        max_iterations=3
+    )
+    
+    # ... rest of init ...
+
+# In BatchProcessor._process_stage()
+
+def _process_stage(self, stage: ProtocolStage, tickers: List[str]) -> Dict:
+    """Process a single stage."""
+    
+    # ... existing code ...
+    
+    for ticker in tickers:
+        try:
+            # Agent interface unchanged!
+            result = self.agent.analyze_company(
+                ticker=ticker,
+                deep_dive=(stage.analysis_type == AnalysisType.DEEP_DIVE),
+                years_to_analyze=stage.years_to_analyze,
+                metadata={
+                    'batch_id': self.state['batch_id'],
+                    'batch_stage': stage.name,
+                    'batch_stage_index': stage_index
+                }
+            )
+            
+            # ... rest of processing ...
+            
+        except ValidationError as e:
+            # Analysis failed validation
+            logger.error(f"Analysis of {ticker} failed validation: {e}")
+            errors.append({
+                'ticker': ticker,
+                'error': str(e),
+                'type': 'validation_failed'
+            })
+        except Exception as e:
+            # Other errors
+            logger.error(f"Error analyzing {ticker}: {e}")
+            errors.append({
+                'ticker': ticker,
+                'error': str(e),
+                'type': 'analysis_failed'
+            })
+    
+    # ... rest of method ...
+```
+
+---
+
+## TESTING PROTOCOL
+
+### Step 1: Unit Tests (Quick Validation)
+
+```python
+# tests/test_buffett_agent_phase_7_6.py
+
+import pytest
+from src.agent.buffett_agent import BuffettAgent, ValidationError
+
+
+def test_agent_initialization():
+    """Test agent initializes correctly."""
+    agent = BuffettAgent(
+        analyst_provider="claude",
+        validator_provider="claude",
+        max_iterations=3
+    )
+    
+    assert agent.analyst is not None
+    assert agent.validator is not None
+    assert agent.max_iterations == 3
+
+
+def test_analysis_creates_required_fields():
+    """Test analysis has all required fields."""
+    agent = BuffettAgent(analyst_provider="claude", validator_provider="claude")
+    
+    # Small test case
+    result = agent.analyze_company(
+        ticker="AAPL",
+        deep_dive=False,  # Quick screen for speed
+        years_to_analyze=5,
+        save_to_db=False  # Don't save test
+    )
+    
+    # Check required fields
+    assert 'ticker' in result
+    assert 'decision' in result
+    assert 'owner_earnings' in result
+    assert 'valuation' in result
+    assert 'validation' in result
+    
+    # Check validation metadata
+    validation = result['validation']
+    assert validation['approved'] is True
+    assert validation['iterations'] >= 1
+    assert validation['iterations'] <= 3
+    assert 'final_score' in validation
+
+
+def test_validation_failure_raises_error():
+    """Test that failed validation raises ValidationError."""
+    
+    # This test is tricky - we'd need to mock responses
+    # to simulate validation failure
+    # Skip for now - real-world testing will catch this
+    pass
+
+
+def test_iterative_refinement_improves_score():
+    """Test that iterations improve analysis quality."""
+    
+    # This requires capturing internal state
+    # Skip for now - logs will show improvement
+    pass
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+```
+
+---
+
+### Step 2: Integration Test (Full Analysis)
+
+```bash
+# Run a complete analysis to verify system works
+
+python -c "
+from src.agent.buffett_agent import BuffettAgent
+
+agent = BuffettAgent(
+    analyst_provider='claude',
+    validator_provider='claude',
+    max_iterations=3
+)
+
+# Test deep dive analysis
+result = agent.analyze_company(
+    ticker='AAPL',
+    deep_dive=True,
+    years_to_analyze=8
+)
+
+print(f'Analysis Complete!')
+print(f'Decision: {result[\"decision\"]}')
+print(f'Intrinsic Value: \${result[\"valuation\"][\"intrinsic_value\"]:.2f}')
+print(f'Margin of Safety: {result[\"valuation\"][\"margin_of_safety_percent\"]:.1f}%')
+print(f'Iterations: {result[\"validation\"][\"iterations\"]}')
+print(f'Score: {result[\"validation\"][\"final_score\"]}/100')
+"
+```
+
+**Expected output:**
+```
+🔄 Iteration 1/3
+📝 Warren Agent: Creating draft analysis...
+✓ Validator: Reviewing analysis...
+⚠️  Analysis NOT approved (iteration 1)
+   Score: 65/100
+   Issues: 3
+   [IMPORTANT] sources: Missing specific SEC filing page numbers
+   [IMPORTANT] moat: Competitive moat analysis too shallow
+   [MINOR] quality: Investment thesis could be stronger
+
+🔄 Iteration 2/3
+📝 Warren Agent: Improving analysis based on feedback...
+   Addressing 3 issues
+✓ Validator: Reviewing analysis...
+⚠️  Analysis NOT approved (iteration 2)
+   Score: 82/100
+   Issues: 1
+   [MINOR] quality: DCF calculation could show more detail
+
+🔄 Iteration 3/3
+📝 Warren Agent: Improving analysis based on feedback...
+   Addressing 1 issues
+✓ Validator: Reviewing analysis...
+✅ Analysis APPROVED after 3 iteration(s)!
+   Score: 91/100
+   Duration: 287.3s
+
+💾 Saved to database (ID: 123)
+
+Analysis Complete!
+Decision: BUY
+Intrinsic Value: $264.60
+Margin of Safety: 25.3%
+Iterations: 3
+Score: 91/100
+```
+
+---
+
+### Step 3: Consistency Test (Critical!)
+
+```python
+# Test that same company produces consistent results
+
+from src.agent.buffett_agent import BuffettAgent
+
+agent = BuffettAgent(analyst_provider="claude", validator_provider="claude")
+
+# Run AAPL analysis 3 times
+results = []
+
+for i in range(3):
+    print(f"\nRun {i+1}/3...")
+    result = agent.analyze_company(
+        ticker="AAPL",
+        deep_dive=True,
+        years_to_analyze=8,
+        save_to_db=False
+    )
+    results.append(result)
+    print(f"  Intrinsic Value: ${result['valuation']['intrinsic_value']:.2f}")
+    print(f"  Iterations: {result['validation']['iterations']}")
+
+# Check variance
+intrinsic_values = [r['valuation']['intrinsic_value'] for r in results]
+min_val = min(intrinsic_values)
+max_val = max(intrinsic_values)
+variance = (max_val - min_val) / min_val * 100
+
+print(f"\n{'='*50}")
+print(f"Consistency Check:")
+print(f"  Intrinsic Values: {intrinsic_values}")
+print(f"  Variance: {variance:.2f}%")
+print(f"  {'✅ PASS' if variance < 5 else '❌ FAIL'} (threshold: <5%)")
+print(f"{'='*50}")
+```
+
+**Expected:** Variance < 5% (validation ensures consistency!)
+
+---
+
+### Step 4: Batch Test (Phase 8 Integration)
+
+```python
+# Test that Phase 8 batch processing still works
+
+from src.batch.batch_processor import BatchProcessor
+from src.batch.protocols import get_protocol
+from src.storage.analysis_storage import AnalysisStorage
+
+storage = AnalysisStorage()
+protocol = get_protocol("value_only")  # Value Investing Only
+
+processor = BatchProcessor(protocol=protocol, storage=storage)
+
+# Small test batch
+tickers = ["AAPL", "MSFT", "GOOG"]
+
+batch_id = processor.start_batch(
+    tickers=tickers,
+    batch_name="Phase 7.6 Integration Test"
+)
+
+# Process batch
+summary = processor.process_batch()
+
+print(f"\n{'='*50}")
+print(f"Batch Processing Test:")
+print(f"  Companies: {summary['total_companies']}")
+print(f"  Completed: {summary['total_completed']}")
+print(f"  BUY decisions: {summary.get('buy_count', 0)}")
+print(f"  Duration: {summary.get('duration_minutes', 0):.1f} min")
+print(f"  Cost: ${summary.get('total_cost', 0):.2f}")
+print(f"{'='*50}")
+```
+
+**Expected:** All 3 companies analyzed successfully with validation!
+
+---
+
+## COST ANALYSIS
+
+### Per-Analysis Cost Comparison
+
+**OLD Architecture (Phase 7):**
+```
+Warren Agent with custom tools:
+- Analysis with tool calls: $3-4
+- Built-in validators: $0
+Total: $3-4 per analysis
+```
+
+**NEW Architecture (Phase 7.6):**
+```
+Warren Agent (uses native tools):
+- Draft analysis: $4
+- Iteration 2 (if needed): $4
+- Iteration 3 (if needed): $4
+
+Validator Agent:
+- Critique #1: $1
+- Critique #2 (if needed): $1
+- Critique #3 (if needed): $1
+
+Average case (2 iterations):
+- Analysis: $4 × 2 = $8
+- Validation: $1 × 2 = $2
+Total: $10 per analysis
+
+Best case (1 iteration):
+- Analysis: $4 × 1 = $4
+- Validation: $1 × 1 = $1
+Total: $5 per analysis
+
+Worst case (3 iterations):
+- Analysis: $4 × 3 = $12
+- Validation: $1 × 3 = $3
+Total: $15 per analysis
+```
+
+**Cost Increase:** 25-275% more expensive
+
+**BUT:** 
+- ✅ 76% less code to maintain
+- ✅ Guaranteed quality (validation)
+- ✅ Future-proof architecture
+- ✅ No non-determinism bug
+
+---
+
+### Batch Processing Cost
+
+**For 100 companies (Value Only protocol):**
+
+**OLD:**
+- Stage 1 (Quick): 100 × $1.14 = $114
+- Stage 2 (Deep): 50 × $2.81 = $141
+- Total: $255
+
+**NEW:**
+- Stage 1 (Quick): 100 × $5 = $500
+- Stage 2 (Deep): 50 × $10 = $500
+- Total: $1,000
+
+**Cost increase:** ~4× more expensive
+
+**Trade-off:**
+- Pay more per analysis
+- But get validated, high-quality results
+- No re-work needed (no non-determinism)
+- Simpler codebase to maintain
+
+**For serious portfolio management, quality > cost!**
+
+---
+
+## MIGRATION GUIDE
+
+### Backwards Compatibility
+
+**Good news:** The agent interface is unchanged!
+
+```python
+# This still works exactly the same:
+agent.analyze_company(
+    ticker="AAPL",
+    deep_dive=True,
+    years_to_analyze=8
+)
+
+# Returns same structure:
+{
+    "ticker": "AAPL",
+    "decision": "BUY",
+    "owner_earnings": {...},
+    "valuation": {...},
+    # NEW: validation metadata
+    "validation": {...}
+}
+```
+
+**Phase 8 batch processing requires ZERO changes!**
+
+### Database Compatibility
+
+**No schema changes needed!**
+
+Analyses saved with Phase 7.6 have same structure as Phase 7, plus optional validation metadata in JSON field.
+
+### UI Compatibility
+
+**Streamlit UI requires NO changes!**
+
+The UI already displays analysis results. Validation metadata is optional and can be shown if desired.
+
+---
+
+## SUCCESS CRITERIA
+
+### Phase 7.6 Complete When:
+
+**Code Changes:**
+- [ ] Deleted 5 custom tool files
+- [ ] Created prompts.py with analyst and validator prompts
+- [ ] Rewrote buffett_agent.py (dual-agent architecture)
+- [ ] Updated llm_provider.py interface (if needed)
+- [ ] Minimal updates to batch_processor.py
+
+**Testing:**
+- [ ] Unit tests pass
+- [ ] Single analysis works end-to-end
+- [ ] Consistency test shows <5% variance
+- [ ] Batch processing works with new agent
+- [ ] All 4 protocols work in Phase 8
+
+**Quality:**
+- [ ] Validation catches methodology errors
+- [ ] Iterative refinement improves analysis
+- [ ] Sources properly cited
+- [ ] Buffett methodology enforced
+
+**Documentation:**
+- [ ] Updated README with new architecture
+- [ ] CHANGELOG.md entry for Phase 7.6
+- [ ] This document (builder prompt)
+
+---
+
+## ROLLOUT PLAN
+
+### Phase 7.6 Implementation (6-8 hours)
+
+**Hour 1: Setup**
+- Create prompts.py with analyst and validator prompts
+- Test prompts in Claude playground
+
+**Hour 2-3: Core Agent**
+- Rewrite buffett_agent.py with dual-agent architecture
+- Implement iterative refinement loop
+- Add progress tracking and logging
+
+**Hour 4: LLM Provider Updates**
+- Ensure all providers expose consistent interface
+- Test native tool usage with Claude
+
+**Hour 5: Integration**
+- Update batch_processor.py (minimal changes)
+- Test single analysis end-to-end
+
+**Hour 6: Testing**
+- Run unit tests
+- Run integration test (AAPL deep dive)
+- Run consistency test (3 runs)
+
+**Hour 7: Batch Testing**
+- Test Phase 8 with small batch (3-5 companies)
+- Verify all protocols work
+- Check database saves correctly
+
+**Hour 8: Documentation & Cleanup**
+- Delete old tool files
+- Update CHANGELOG.md
+- Update README.md with new architecture
+- Commit and push
+
+---
+
+## RISKS & MITIGATION
+
+### Risk 1: Validation Too Strict
+
+**Problem:** Validator rejects all analyses, nothing gets approved
+
+**Mitigation:**
+- Set approval threshold at 85/100 (not 95)
+- Allow up to 3 iterations
+- Make validator constructive, not just critical
+- Test with various companies
+
+### Risk 2: Cost Too High
+
+**Problem:** $10-15 per analysis vs $3-4 = too expensive
+
+**Mitigation:**
+- Offer "quick mode" without validation for screening
+- Use cheaper validator (Haiku instead of Sonnet)
+- Only validate final stage in batch processing
+- Let users choose validation level
+
+### Risk 3: Validator Misses Errors
+
+**Problem:** Validator approves bad analysis
+
+**Mitigation:**
+- Use detailed checklist in validator prompt
+- Require code_interpreter to verify calculations
+- Web_fetch to spot-check key sources
+- Keep approval threshold high (85+)
+
+### Risk 4: Iterations Don't Improve
+
+**Problem:** Analyst stuck, can't fix issues
+
+**Mitigation:**
+- Check progress between iterations
+- If no improvement, try fresh attempt
+- Provide very specific, actionable feedback
+- Allow max 3 iterations then fail gracefully
+
+---
+
+## FUTURE ENHANCEMENTS
+
+### After Phase 7.6 Stabilizes:
+
+**1. Multiple Validators (Option B)**
+```python
+# Panel of specialist validators
+agent = BuffettAgent(
+    analyst_provider="claude",
+    validators={
+        "methodology": "claude-sonnet-4",
+        "math": "gpt-5",
+        "sources": "claude-haiku-4",
+        "sharia": "claude-sonnet-4"
+    }
+)
+```
+
+**2. Configurable Validation Modes**
+```python
+# Let user choose quality vs cost
+agent.analyze_company(
+    ticker="AAPL",
+    validation_mode="none",  # Fast & cheap
+    validation_mode="standard",  # Single validator, 3 iterations
+    validation_mode="premium"  # Multiple validators
+)
+```
+
+**3. Batch-Optimized Validation**
+```python
+# Only validate final stage in batch
+processor.process_batch(
+    validate_stages=[2]  # Only validate deep dive stage
+)
+```
+
+**4. Validator Learning**
+```python
+# Track common validation issues
+# Improve analyst prompt over time
+# Reduce average iterations needed
+```
+
+---
+
+## CONCLUSION
+
+Phase 7.6 represents a **fundamental architectural improvement** to basīrah:
+
+**From:** Custom tools + Optional validation = Complex + Unreliable
+**To:** Native LLM tools + Required validation = Simple + Reliable
+
+**Trade-offs:**
+- ✅ 76% less code
+- ✅ Future-proof
+- ✅ Guaranteed quality
+- ✅ Deterministic results
+- ❌ 2-4× more expensive per analysis
+
+**For serious portfolio management, this is the right trade-off.**
+
+Quality and reliability are worth the extra cost.
+
+---
+
+*Phase 7.6: Dual-Agent Architecture with Iterative Refinement*
+*Estimated: 6-8 hours | Cost: 2-4× per analysis*
+*Status: Ready for Implementation*

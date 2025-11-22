@@ -1,8 +1,8 @@
 """
-Accurate Cost Estimation using Claude Token Counting API
+Provider-Aware Cost Estimation
 
-This module provides precise cost estimates for all analysis types
-using Anthropic's token counting endpoint.
+This module provides cost estimates for all analysis types.
+Uses provider-specific token counting when available.
 """
 
 import os
@@ -14,11 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class CostEstimator:
-    """Provides accurate cost estimates using token counting API."""
+    """Provides cost estimates using provider-specific methods."""
 
-    # Pricing per 1K tokens (Claude Sonnet 4.5)
-    INPUT_COST_PER_1K = 0.01  # $0.01 per 1K input tokens
-    OUTPUT_COST_PER_1K = 0.30  # $0.30 per 1K output tokens
+    # Pricing per 1K tokens by provider
+    PROVIDER_COSTS = {
+        "claude": {
+            "input": 0.01,  # $0.01 per 1K input tokens (Claude Sonnet 4.5)
+            "output": 0.30   # $0.30 per 1K output tokens
+        },
+        "kimi": {
+            "input": 0.006,  # Estimated ~60% cheaper than Claude
+            "output": 0.18   # Estimated ~60% cheaper than Claude
+        }
+    }
 
     # Conservative output token estimates (based on historical data)
     # These will be refined over time with actual usage data
@@ -35,11 +43,24 @@ class CostEstimator:
     SHARIA_SCREEN_TOOL_TOKENS = 18000  # Business section (~10-20K) + GuruFocus calls (~5-8K for multiple metrics)
 
     def __init__(self):
-        """Initialize cost estimator with Anthropic client."""
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found in environment")
-        self.client = Anthropic(api_key=api_key)
+        """Initialize cost estimator with provider-specific clients."""
+        # Initialize Anthropic client if available (for Claude token counting)
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            self.anthropic_client = Anthropic(api_key=anthropic_key)
+        else:
+            self.anthropic_client = None
+            logger.warning("ANTHROPIC_API_KEY not found - Claude token counting unavailable")
+
+    def _get_provider_name(self, agent) -> str:
+        """Get provider name from agent."""
+        provider_info = agent.llm.get_provider_info()
+        provider = provider_info.get('provider', '').lower()
+        return provider
+
+    def _get_provider_costs(self, provider: str) -> Dict[str, float]:
+        """Get cost per 1K tokens for provider."""
+        return self.PROVIDER_COSTS.get(provider, self.PROVIDER_COSTS["claude"])
 
     def estimate_quick_screen_cost(
         self,
@@ -47,7 +68,7 @@ class CostEstimator:
         agent
     ) -> Dict[str, Any]:
         """
-        Get accurate cost estimate for Quick Screen analysis.
+        Get cost estimate for Quick Screen analysis.
 
         Args:
             ticker: Stock ticker symbol
@@ -56,11 +77,14 @@ class CostEstimator:
         Returns:
             Dict with cost breakdown and token counts
         """
+        provider = self._get_provider_name(agent)
+        costs = self._get_provider_costs(provider)
+
         try:
             # Build the message structure that will be used
-            system_prompt = agent.system_prompt  # Quick screen uses standard prompt
+            system_prompt = agent.system_prompt
 
-            # Build initial user message for 1-year analysis
+            # Build initial user message
             initial_message = f"""Analyze {ticker} stock using Warren Buffett's investment principles.
 
 This is a Quick Screen analysis (1 year of data). Provide a focused analysis with:
@@ -70,31 +94,37 @@ This is a Quick Screen analysis (1 year of data). Provide a focused analysis wit
 
 Focus on quality over quantity. Be concise but thorough."""
 
-            # Count tokens
-            response = self.client.messages.count_tokens(
-                model=agent.MODEL,
-                system=system_prompt,
-                messages=[{"role": "user", "content": initial_message}],
-                tools=agent._get_tool_definitions(),
-                thinking={
-                    "type": "enabled",
-                    "budget_tokens": agent.THINKING_BUDGET
-                }
-            )
+            # Count tokens (Claude-specific)
+            if provider == "claude" and self.anthropic_client:
+                response = self.anthropic_client.messages.count_tokens(
+                    model=agent.MODEL,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": initial_message}],
+                    tools=agent._get_tool_definitions(),
+                    thinking={
+                        "type": "enabled",
+                        "budget_tokens": agent.THINKING_BUDGET
+                    }
+                )
+                input_tokens = response.input_tokens
+            else:
+                # For Kimi or when Claude token counting unavailable, use estimation
+                # Rough estimate: ~4 chars per token
+                total_chars = len(system_prompt) + len(initial_message)
+                input_tokens = total_chars // 4
+                logger.info(f"Using character-based token estimation for {provider}")
 
-            input_tokens = response.input_tokens
-
-            # Add empirical estimate for tool responses (SEC business section + GuruFocus data)
+            # Add empirical estimate for tool responses
             estimated_total_input_tokens = input_tokens + self.QUICK_SCREEN_TOOL_TOKENS
             estimated_output_tokens = self.QUICK_SCREEN_OUTPUT_TOKENS
 
-            # Calculate costs
-            input_cost = (estimated_total_input_tokens / 1000) * self.INPUT_COST_PER_1K
-            output_cost = (estimated_output_tokens / 1000) * self.OUTPUT_COST_PER_1K
+            # Calculate costs using provider-specific pricing
+            input_cost = (estimated_total_input_tokens / 1000) * costs["input"]
+            output_cost = (estimated_output_tokens / 1000) * costs["output"]
             total_cost = input_cost + output_cost
 
             logger.info(
-                f"Quick Screen cost estimate for {ticker}: "
+                f"Quick Screen cost estimate for {ticker} ({provider}): "
                 f"{input_tokens} initial + {self.QUICK_SCREEN_TOOL_TOKENS} tool results = "
                 f"{estimated_total_input_tokens} total input tokens, ${total_cost:.2f} total"
             )
@@ -103,6 +133,7 @@ Focus on quality over quantity. Be concise but thorough."""
                 "success": True,
                 "analysis_type": "quick_screen",
                 "ticker": ticker,
+                "provider": provider,
                 "input_tokens": estimated_total_input_tokens,
                 "initial_prompt_tokens": input_tokens,
                 "tool_response_tokens": self.QUICK_SCREEN_TOOL_TOKENS,
@@ -110,14 +141,14 @@ Focus on quality over quantity. Be concise but thorough."""
                 "input_cost": round(input_cost, 2),
                 "estimated_output_cost": round(output_cost, 2),
                 "total_estimated_cost": round(total_cost, 2),
-                "min_cost": round(total_cost * 0.85, 2),  # -15% variance (tool sizes vary)
-                "max_cost": round(total_cost * 1.15, 2),  # +15% variance
-                "confidence": "high"  # Token counting + empirical tool estimates
+                "min_cost": round(total_cost * 0.85, 2),
+                "max_cost": round(total_cost * 1.15, 2),
+                "confidence": "high" if provider == "claude" else "medium"
             }
 
         except Exception as e:
             logger.error(f"Failed to estimate Quick Screen cost: {e}")
-            return self._fallback_estimate("quick_screen", str(e))
+            return self._fallback_estimate("quick_screen", str(e), provider=provider)
 
     def estimate_deep_dive_cost(
         self,
@@ -217,7 +248,7 @@ Use all available tools to gather data."""
         screener
     ) -> Dict[str, Any]:
         """
-        Get accurate cost estimate for Sharia Compliance screening.
+        Get cost estimate for Sharia Compliance screening.
 
         Args:
             ticker: Stock ticker symbol
@@ -226,34 +257,47 @@ Use all available tools to gather data."""
         Returns:
             Dict with cost breakdown and token counts
         """
+        provider = self._get_provider_name(screener)
+        costs = self._get_provider_costs(provider)
+
         try:
             # Build Sharia screening prompt
             prompt = screener._build_sharia_screening_prompt(ticker)
 
-            # Count tokens
-            response = self.client.messages.count_tokens(
-                model=screener.MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                tools=screener._get_tool_definitions(),
-                thinking={
-                    "type": "enabled",
-                    "budget_tokens": screener.THINKING_BUDGET
-                }
-            )
+            # Count tokens (Claude-specific)
+            if provider == "claude" and self.anthropic_client:
+                # Get provider info to get model ID
+                provider_info = screener.llm.get_provider_info()
+                model_id = provider_info['model_id']
 
-            input_tokens = response.input_tokens
+                response = self.anthropic_client.messages.count_tokens(
+                    model=model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    tools=screener._get_tool_definitions(),
+                    thinking={
+                        "type": "enabled",
+                        "budget_tokens": screener.THINKING_BUDGET
+                    }
+                )
+                input_tokens = response.input_tokens
+            else:
+                # For Kimi or when Claude token counting unavailable, use estimation
+                # Rough estimate: ~4 chars per token
+                total_chars = len(prompt)
+                input_tokens = total_chars // 4
+                logger.info(f"Using character-based token estimation for {provider}")
 
-            # Add empirical estimate for tool responses (full 10-K + GuruFocus calls)
+            # Add empirical estimate for tool responses
             estimated_total_input_tokens = input_tokens + self.SHARIA_SCREEN_TOOL_TOKENS
             estimated_output_tokens = self.SHARIA_SCREEN_OUTPUT_TOKENS
 
-            # Calculate costs
-            input_cost = (estimated_total_input_tokens / 1000) * self.INPUT_COST_PER_1K
-            output_cost = (estimated_output_tokens / 1000) * self.OUTPUT_COST_PER_1K
+            # Calculate costs using provider-specific pricing
+            input_cost = (estimated_total_input_tokens / 1000) * costs["input"]
+            output_cost = (estimated_output_tokens / 1000) * costs["output"]
             total_cost = input_cost + output_cost
 
             logger.info(
-                f"Sharia Screen cost estimate for {ticker}: "
+                f"Sharia Screen cost estimate for {ticker} ({provider}): "
                 f"{input_tokens} initial + {self.SHARIA_SCREEN_TOOL_TOKENS} tool results = "
                 f"{estimated_total_input_tokens} total input tokens, ${total_cost:.2f} total"
             )
@@ -262,6 +306,7 @@ Use all available tools to gather data."""
                 "success": True,
                 "analysis_type": "sharia_compliance",
                 "ticker": ticker,
+                "provider": provider,
                 "input_tokens": estimated_total_input_tokens,
                 "initial_prompt_tokens": input_tokens,
                 "tool_response_tokens": self.SHARIA_SCREEN_TOOL_TOKENS,
@@ -269,20 +314,21 @@ Use all available tools to gather data."""
                 "input_cost": round(input_cost, 2),
                 "estimated_output_cost": round(output_cost, 2),
                 "total_estimated_cost": round(total_cost, 2),
-                "min_cost": round(total_cost * 0.85, 2),  # -15% variance (filing sizes vary)
-                "max_cost": round(total_cost * 1.20, 2),  # +20% variance
-                "confidence": "high"  # Token counting + empirical tool estimates
+                "min_cost": round(total_cost * 0.85, 2),
+                "max_cost": round(total_cost * 1.20, 2),
+                "confidence": "high" if provider == "claude" else "medium"
             }
 
         except Exception as e:
             logger.error(f"Failed to estimate Sharia Screen cost: {e}")
-            return self._fallback_estimate("sharia_compliance", str(e))
+            return self._fallback_estimate("sharia_compliance", str(e), provider=provider)
 
     def _fallback_estimate(
         self,
         analysis_type: str,
         error: str,
-        years: int = 1
+        years: int = 1,
+        provider: str = "claude"
     ) -> Dict[str, Any]:
         """
         Provide fallback estimate if token counting fails.
@@ -291,48 +337,57 @@ Use all available tools to gather data."""
             analysis_type: Type of analysis
             error: Error message
             years: Number of years (for deep dive)
+            provider: LLM provider name
 
         Returns:
             Dict with rough cost estimate
         """
-        logger.warning(f"Using fallback estimate due to error: {error}")
+        logger.warning(f"Using fallback estimate for {provider} due to error: {error}")
+
+        # Adjust costs based on provider (Kimi ~60% of Claude cost)
+        cost_multiplier = 0.6 if provider == "kimi" else 1.0
 
         # Fallback to rough estimates
         if analysis_type == "quick_screen":
+            base_cost = 1.25 * cost_multiplier
             return {
                 "success": False,
                 "error": error,
                 "analysis_type": analysis_type,
-                "total_estimated_cost": 1.25,
-                "min_cost": 0.75,
-                "max_cost": 1.50,
+                "provider": provider,
+                "total_estimated_cost": round(base_cost, 2),
+                "min_cost": round(base_cost * 0.6, 2),
+                "max_cost": round(base_cost * 1.2, 2),
                 "confidence": "low",
-                "note": "Token counting unavailable, using historical average"
+                "note": f"Token counting unavailable for {provider}, using historical average"
             }
         elif analysis_type == "deep_dive":
-            base = 2.50
-            total = base + (years - 1) * 0.50
+            base = 2.50 * cost_multiplier
+            total = base + (years - 1) * 0.50 * cost_multiplier
             return {
                 "success": False,
                 "error": error,
                 "analysis_type": analysis_type,
+                "provider": provider,
                 "years_to_analyze": years,
-                "total_estimated_cost": total,
-                "min_cost": total * 0.8,
-                "max_cost": total * 1.2,
+                "total_estimated_cost": round(total, 2),
+                "min_cost": round(total * 0.8, 2),
+                "max_cost": round(total * 1.2, 2),
                 "confidence": "low",
-                "note": "Token counting unavailable, using historical average"
+                "note": f"Token counting unavailable for {provider}, using historical average"
             }
         else:  # sharia_compliance
+            base_cost = 5.50 * cost_multiplier
             return {
                 "success": False,
                 "error": error,
                 "analysis_type": analysis_type,
-                "total_estimated_cost": 5.50,
-                "min_cost": 4.00,
-                "max_cost": 7.00,
+                "provider": provider,
+                "total_estimated_cost": round(base_cost, 2),
+                "min_cost": round(base_cost * 0.73, 2),
+                "max_cost": round(base_cost * 1.27, 2),
                 "confidence": "low",
-                "note": "Token counting unavailable, using historical average"
+                "note": f"Token counting unavailable for {provider}, using historical average"
             }
 
 

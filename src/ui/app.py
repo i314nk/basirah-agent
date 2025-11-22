@@ -46,7 +46,7 @@ from src.ui.utils import (
 
 # Page config
 st.set_page_config(
-    page_title="basīrah - Warren Buffett AI",
+    page_title="basīrah - Buffett Framework Analysis",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -75,11 +75,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Initialize agent (cache it for performance)
-@st.cache_resource
-def get_agent():
-    """Initialize and cache the Warren Buffett AI Agent"""
-    return WarrenBuffettAgent()
+# Initialize agent (don't cache - need fresh instance for different settings)
+def get_agent(enable_validation=True, analyst_model=None, validator_model=None):
+    """
+    Initialize Investment Analysis Agent with validation settings (Phase 9).
+
+    Args:
+        enable_validation: Enable single-pass validation (Munger mental models)
+        analyst_model: Model to use for analysis (optional)
+        validator_model: Model to use for validation (optional)
+
+    Returns:
+        WarrenBuffettAgent instance
+    """
+    return WarrenBuffettAgent(
+        model_key=analyst_model,
+        validator_model_key=validator_model,
+        enable_validation=enable_validation,
+        max_validation_iterations=1,  # Phase 9: Single-pass validation only
+        score_threshold=80
+    )
 
 
 def main():
@@ -162,6 +177,54 @@ def main():
         st.divider()
         st.markdown("### ⚙️ Advanced Settings")
 
+        with st.expander("🤖 Model Selection", expanded=False):
+            st.markdown("#### Choose Models for Analysis & Validation")
+
+            # Available models
+            MODELS = {
+                "claude-sonnet-4.5": "Claude 4 Sonnet (Best quality, $$$ High cost)",
+                "claude-3.5-sonnet": "Claude 3.5 Sonnet (Excellent, $$$ High cost)",
+                "kimi-k2-thinking": "Kimi K2 Thinking (Best reasoning, $$ Medium cost)",
+                "kimi-k2-thinking-turbo": "Kimi K2 Thinking Turbo (Fast reasoning, $$ Medium cost)",
+                "kimi-k2-turbo": "Kimi K2 Turbo (Fastest, $ Low cost)",
+            }
+
+            analyst_model = st.selectbox(
+                "Analyst Model (Main Analysis)",
+                options=list(MODELS.keys()),
+                index=2,  # Default to kimi-k2-thinking
+                format_func=lambda x: MODELS[x],
+                help="Model used for deep investment analysis. Kimi K2 Thinking recommended for best quality at reasonable cost."
+            )
+
+            validator_model = st.selectbox(
+                "Validator Model (Quality Check)",
+                options=list(MODELS.keys()),
+                index=4,  # Default to kimi-k2-turbo (cheapest)
+                format_func=lambda x: MODELS[x],
+                help="Model used for validation and refinement. Kimi K2 Turbo recommended for cost savings - validation doesn't need extended thinking."
+            )
+
+            # Store in session state
+            st.session_state['analyst_model'] = analyst_model
+            st.session_state['validator_model'] = validator_model
+
+            # Show cost impact
+            if analyst_model == validator_model:
+                st.info(
+                    f"**Using same model for both**\n\n"
+                    f"Analyst: {MODELS[analyst_model]}\n"
+                    f"Validator: Same as analyst\n\n"
+                    f"💡 Use cheaper validator model (Kimi K2 Turbo) to reduce costs by ~30%"
+                )
+            else:
+                st.success(
+                    f"**Multi-model setup**\n\n"
+                    f"Analyst: {MODELS[analyst_model]}\n"
+                    f"Validator: {MODELS[validator_model]}\n\n"
+                    f"✅ Cost optimized! Validation uses faster/cheaper model."
+                )
+
         with st.expander("Analysis Configuration", expanded=False):
             years_to_analyze = st.slider(
                 "Years to Analyze (Deep Dive)",
@@ -193,6 +256,42 @@ def main():
                 f"**Estimated cost:** ~${2.09 + (years_to_analyze-1)*0.18:.2f}\n"
                 f"💡 Use 'Check Cost' button for exact estimate"
             )
+
+        with st.expander("Quality Validation (Phase 9)", expanded=False):
+            st.markdown("#### ✓ Single-Pass Validation (Munger Mental Models)")
+
+            enable_validation = st.checkbox(
+                "Enable Validation",
+                value=True,
+                help="Phase 9: Single-pass validation using Charlie Munger's mental models framework. The validator reviews the analysis for logical flaws, optimistic assumptions, and blind spots. Recommended for all analyses."
+            )
+
+            if enable_validation:
+                st.info(
+                    "**Phase 9 Validation Approach:**\n\n"
+                    "**Phase 1: Review Mode (Always)**\n"
+                    "- Validator applies Munger's mental models to the analysis\n"
+                    "- Uses Warren's cached data (GuruFocus, 10-K, web searches)\n"
+                    "- Identifies logical flaws, optimistic assumptions, blind spots\n\n"
+                    "**Phase 2: Targeted Investigation (If Needed)**\n"
+                    "- Maximum 2-3 additional tool calls if critical gaps found\n"
+                    "- Examples: proxy statements, competitor research, insider trading\n\n"
+                    "**Mental Models Applied:**\n"
+                    "- Inversion (what could go wrong?)\n"
+                    "- Second-order thinking (then what?)\n"
+                    "- Incentive-caused bias\n"
+                    "- Psychological biases\n\n"
+                    "💡 **No iterative refinement** - single-pass validation only"
+                )
+            else:
+                st.warning(
+                    "⚠️ **Validation Disabled**\n\n"
+                    "Analysis will NOT be validated. Quality may vary.\n\n"
+                    "This is NOT recommended - the validator ensures rigorous application of investment principles."
+                )
+
+            # Store in session state for access during analysis
+            st.session_state['enable_validation'] = enable_validation
 
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -249,12 +348,19 @@ def main():
 
             with st.spinner("Calculating exact cost using token counting..."):
                 try:
+                    # Get validation settings from session state
+                    enable_validation = st.session_state.get('enable_validation', True)
+
+                    # Get model selections
+                    analyst_model = st.session_state.get('analyst_model')
+                    validator_model = st.session_state.get('validator_model')
+
                     # Get cost estimate based on analysis type
                     if analysis_type == "Quick Screen":
-                        agent = get_agent()
+                        agent = get_agent(enable_validation, analyst_model, validator_model)
                         estimate = cost_estimator.estimate_quick_screen_cost(ticker, agent)
                     elif analysis_type == "Deep Dive":
-                        agent = get_agent()
+                        agent = get_agent(enable_validation, analyst_model, validator_model)
                         estimate = cost_estimator.estimate_deep_dive_cost(ticker, years_to_analyze, agent)
                     else:  # Sharia Compliance
                         if not sharia_screener:
@@ -462,10 +568,21 @@ def run_analysis(ticker: str, deep_dive: bool, years_to_analyze: int = 3):
     status_container = st.empty()
 
     try:
-        # Initialize agent
+        # Get validation settings from session state
+        enable_validation = st.session_state.get('enable_validation', True)
+
+        # Get model selections
+        analyst_model = st.session_state.get('analyst_model')
+        validator_model = st.session_state.get('validator_model')
+
+        # Initialize agent with validation settings
         with progress_container:
-            with st.spinner("Initializing Warren Buffett AI Agent..."):
-                agent = get_agent()
+            with st.spinner("Initializing Investment Analysis Agent (Phase 9)..."):
+                agent = get_agent(
+                    enable_validation=enable_validation,
+                    analyst_model=analyst_model,
+                    validator_model=validator_model
+                )
 
         # Start analysis
         start_time = time.time()

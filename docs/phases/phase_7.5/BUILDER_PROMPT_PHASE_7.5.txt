@@ -1,0 +1,1496 @@
+# BUILDER PROMPT: Phase 7.5 - Quality Control & Validation Layer
+
+**Project:** basīrah Warren Buffett AI Agent
+**Phase:** 7.5 - Quality Control & Validation
+**Priority:** CRITICAL (Production-Breaking Bug Fix)
+**Estimated Time:** 6-8 hours
+**Prerequisites:** Phase 6C.1 ✅ | Phase 7 ✅
+
+---
+
+## CRITICAL PROBLEM STATEMENT
+
+### **Production Bug Discovered:**
+
+Running the same company (FDS) through deep dive analysis **twice in the same session** produced wildly different results:
+
+```
+Run 1: Intrinsic Value = $264.60 (correct methodology)
+Run 2: Intrinsic Value = $220.50 (hallucinated)
+
+Variance: 20% difference on same company!
+```
+
+### **Root Cause Identified:**
+
+**Log Evidence from Run 1 (Correct):**
+```
+INFO:src.agent.buffett_agent:[Stage 3] Synthesizing multi-year findings...
+INFO:src.agent.buffett_agent:[Tool Use] calculator_tool (id: toolu_015uhPC4cEDVRcwkuZdT4ZMX)
+INFO:src.agent.buffett_agent:[Tool Use] gurufocus_tool (id: toolu_015CEELtGqR9kqNDvneEDqjb)
+INFO:src.agent.buffett_agent:[Tool Use] calculator_tool (id: toolu_013At1EwE26fvGZbmd5pnsn6)
+INFO:src.agent.buffett_agent:Agent finished after 5 tool calls
+```
+**Result:** Used calculator_tool properly → accurate valuation ✅
+
+**Log Evidence from Run 2 (Wrong):**
+```
+INFO:src.agent.buffett_agent:[Stage 3] Synthesizing multi-year findings...
+INFO:src.agent.buffett_agent:[Agent] # FactSet Research Systems Inc. (FDS) - Complete Investment Thesis
+INFO:src.agent.buffett_agent:Agent finished after 0 tool calls
+```
+**Result:** Skipped all tools → hallucinated valuation ❌
+
+### **The Problem:**
+
+In Stage 3 (final synthesis), Claude's ReAct loop **optionally** decides whether to use calculator tools. Sometimes it:
+- ✅ Calls calculator_tool for Owner Earnings, ROIC, DCF (correct)
+- ❌ "Reasons" about valuations without calculating (wrong - pure hallucination)
+
+This **optional tool use is catastrophic** for financial analysis. The agent must ALWAYS calculate, never estimate.
+
+### **Additional Issues Found:**
+
+1. **Owner Earnings Methodology Error:** Sometimes uses Net Income instead of Free Cash Flow
+2. **Data Source Inconsistency:** Different runs may get different data from APIs
+3. **No Validation Layer:** System trusts agent output without verification
+
+---
+
+## SOLUTION ARCHITECTURE
+
+Phase 7.5 adds a **comprehensive validation layer** that:
+
+1. **Mandatory Tool Validation** - Ensures synthesis ALWAYS uses calculator_tool
+2. **Methodology Validation** - Verifies Buffett principles (FCF not Net Income)
+3. **Data Consistency Checks** - Cross-validates data from multiple sources
+4. **Determinism Testing** - Tests same company 5x to verify <1% variance
+5. **Quality Gates** - Blocks invalid analyses from being saved
+
+```
+Current Flow (Broken):
+User Request → Agent Analysis → Save to DB
+                 ↑ (no validation - sometimes wrong!)
+
+New Flow (Fixed):
+User Request → Agent Analysis → Validation Layer → Save to DB
+                                      ↓
+                                 (catches errors before saving)
+```
+
+---
+
+## FILE STRUCTURE
+
+### New Files (5 core + 1 test)
+
+```
+src/validation/
+├── __init__.py                      # Package init
+├── synthesis_validator.py           # Mandatory tool validation (CRITICAL)
+├── methodology_validator.py         # Buffett principles enforcement
+├── data_validator.py                # Cross-source consistency checks
+└── consistency_tester.py            # Determinism testing
+
+tests/
+└── test_quality_control.py          # Comprehensive validation tests
+```
+
+### Modified Files (1)
+
+```
+src/agent/buffett_agent.py          # Integrate validators into synthesis
+```
+
+---
+
+## IMPLEMENTATION
+
+### File 1: Synthesis Validator (CRITICAL)
+
+**File:** Create `src/validation/synthesis_validator.py`
+
+```python
+"""
+Synthesis validation for basīrah.
+
+CRITICAL: Ensures final synthesis always uses calculator_tool.
+Prevents hallucinated valuations by enforcing mandatory calculations.
+"""
+
+import logging
+from typing import List, Dict, Any, Set
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+class ValidationError(Exception):
+    """Raised when validation fails."""
+    pass
+
+
+@dataclass
+class CalculationRequirement:
+    """Required calculation in synthesis."""
+    calculation_type: str
+    required_params: Set[str]
+    description: str
+
+
+class SynthesisValidator:
+    """
+    Validates that synthesis performs all required calculations.
+    
+    CRITICAL: Deep dive synthesis MUST use calculator_tool for:
+    1. Owner Earnings calculation
+    2. ROIC calculation
+    3. DCF valuation
+    4. Margin of Safety calculation
+    
+    If synthesis skips tools, it produces hallucinated valuations.
+    This validator ensures that NEVER happens.
+    """
+    
+    # Required calculations for deep dive synthesis
+    REQUIRED_CALCULATIONS = [
+        CalculationRequirement(
+            calculation_type="owner_earnings",
+            required_params={"operating_cash_flow", "capex"},
+            description="Owner Earnings (Buffett methodology)"
+        ),
+        CalculationRequirement(
+            calculation_type="roic",
+            required_params={"nopat", "invested_capital"},
+            description="Return on Invested Capital"
+        ),
+        CalculationRequirement(
+            calculation_type="dcf",
+            required_params={"owner_earnings", "growth_rate", "discount_rate", "terminal_growth"},
+            description="DCF Intrinsic Value"
+        ),
+        CalculationRequirement(
+            calculation_type="margin_of_safety",
+            required_params={"intrinsic_value", "current_price"},
+            description="Margin of Safety"
+        )
+    ]
+    
+    def __init__(self):
+        """Initialize validator."""
+        self.calculations_done: Set[str] = set()
+        self.tool_calls: List[Dict[str, Any]] = []
+    
+    def track_tool_call(self, tool_name: str, params: Dict[str, Any], result: Any):
+        """
+        Track a tool call during synthesis.
+        
+        Args:
+            tool_name: Name of tool called
+            params: Parameters passed to tool
+            result: Result from tool
+        """
+        self.tool_calls.append({
+            "tool": tool_name,
+            "params": params,
+            "result": result
+        })
+        
+        # Track calculation types
+        if tool_name == "calculator_tool":
+            calc_type = params.get("calculation_type")
+            if calc_type:
+                self.calculations_done.add(calc_type)
+                logger.info(f"✓ Tracked calculation: {calc_type}")
+    
+    def validate_synthesis_complete(self, analysis_type: str = "deep_dive") -> bool:
+        """
+        Validate that synthesis performed all required calculations.
+        
+        Args:
+            analysis_type: Type of analysis (deep_dive, quick_screen, etc)
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            ValidationError: If required calculations were skipped
+        """
+        if analysis_type != "deep_dive":
+            # Quick screens have different requirements
+            return True
+        
+        # Check if all required calculations were done
+        required_types = {req.calculation_type for req in self.REQUIRED_CALCULATIONS}
+        missing = required_types - self.calculations_done
+        
+        if missing:
+            # CRITICAL ERROR: Synthesis skipped required calculations
+            missing_details = []
+            for req in self.REQUIRED_CALCULATIONS:
+                if req.calculation_type in missing:
+                    missing_details.append(
+                        f"  - {req.calculation_type}: {req.description}"
+                    )
+            
+            error_msg = (
+                "❌ CRITICAL VALIDATION FAILURE\n"
+                "\n"
+                "Synthesis skipped required calculations:\n"
+                + "\n".join(missing_details) + "\n"
+                "\n"
+                "This would produce HALLUCINATED valuations!\n"
+                "\n"
+                "The agent MUST use calculator_tool for all financial calculations.\n"
+                "Never allow the agent to 'estimate' or 'reason about' valuations.\n"
+                "\n"
+                f"Calculations performed: {self.calculations_done}\n"
+                f"Tool calls made: {len(self.tool_calls)}\n"
+                "\n"
+                "Analysis REJECTED - will not be saved to database."
+            )
+            
+            logger.error(error_msg)
+            raise ValidationError(error_msg)
+        
+        logger.info(f"✅ Synthesis validation passed: All {len(required_types)} required calculations performed")
+        return True
+    
+    def get_calculation_result(self, calculation_type: str) -> Any:
+        """
+        Get result of a specific calculation.
+        
+        Args:
+            calculation_type: Type of calculation
+            
+        Returns:
+            Calculation result or None if not found
+        """
+        for call in self.tool_calls:
+            if call["tool"] == "calculator_tool":
+                if call["params"].get("calculation_type") == calculation_type:
+                    return call["result"]
+        return None
+    
+    def validate_calculation_params(
+        self,
+        calculation_type: str,
+        params: Dict[str, Any]
+    ) -> bool:
+        """
+        Validate that calculation has all required parameters.
+        
+        Args:
+            calculation_type: Type of calculation
+            params: Parameters passed to calculator
+            
+        Returns:
+            True if valid
+            
+        Raises:
+            ValidationError: If required parameters missing
+        """
+        # Find requirement
+        requirement = None
+        for req in self.REQUIRED_CALCULATIONS:
+            if req.calculation_type == calculation_type:
+                requirement = req
+                break
+        
+        if not requirement:
+            # Unknown calculation type (OK - might be utility calculation)
+            return True
+        
+        # Check required params
+        missing = requirement.required_params - set(params.keys())
+        
+        if missing:
+            error_msg = (
+                f"❌ Invalid {calculation_type} calculation\n"
+                f"Missing required parameters: {missing}\n"
+                f"Required: {requirement.required_params}\n"
+                f"Provided: {set(params.keys())}"
+            )
+            logger.error(error_msg)
+            raise ValidationError(error_msg)
+        
+        return True
+    
+    def reset(self):
+        """Reset validator for new analysis."""
+        self.calculations_done.clear()
+        self.tool_calls.clear()
+
+
+__all__ = [
+    "SynthesisValidator",
+    "ValidationError",
+    "CalculationRequirement"
+]
+```
+
+---
+
+### File 2: Methodology Validator
+
+**File:** Create `src/validation/methodology_validator.py`
+
+```python
+"""
+Methodology validation for basīrah.
+
+Ensures analyses follow Warren Buffett's principles:
+- Owner Earnings = Operating Cash Flow - CapEx (NOT Net Income)
+- ROIC uses NOPAT and Invested Capital
+- Conservative growth assumptions
+"""
+
+import logging
+from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
+
+class MethodologyError(Exception):
+    """Raised when methodology validation fails."""
+    pass
+
+
+class MethodologyValidator:
+    """
+    Validates that analyses follow Buffett methodology.
+    
+    CRITICAL: Owner Earnings MUST use Free Cash Flow approach,
+    never Net Income. This is the fundamental Buffett principle.
+    """
+    
+    def validate_owner_earnings(self, params: Dict[str, Any]) -> bool:
+        """
+        Validate Owner Earnings calculation methodology.
+        
+        Warren Buffett defines Owner Earnings as:
+        "reported earnings plus depreciation, depletion, amortization...
+        less the average annual amount of capitalized expenditures"
+        
+        In practice: Operating Cash Flow - CapEx ≈ Free Cash Flow
+        
+        NEVER use Net Income alone.
+        
+        Args:
+            params: Parameters for owner_earnings calculation
+            
+        Returns:
+            True if valid
+            
+        Raises:
+            MethodologyError: If using wrong methodology
+        """
+        required = {"operating_cash_flow", "capex"}
+        
+        if not required.issubset(set(params.keys())):
+            missing = required - set(params.keys())
+            
+            error_msg = (
+                "❌ OWNER EARNINGS METHODOLOGY ERROR\n"
+                "\n"
+                "Owner Earnings MUST be calculated using Buffett's methodology:\n"
+                "  Owner Earnings = Operating Cash Flow - CapEx\n"
+                "\n"
+                f"Missing required fields: {missing}\n"
+                f"Provided fields: {set(params.keys())}\n"
+                "\n"
+                "NEVER use Net Income alone for Owner Earnings!\n"
+                "This is a fundamental error in value investing."
+            )
+            
+            logger.error(error_msg)
+            raise MethodologyError(error_msg)
+        
+        # Calculate Owner Earnings
+        ocf = params["operating_cash_flow"]
+        capex = params["capex"]
+        owner_earnings = ocf - capex
+        
+        # Sanity check: Should be close to FCF, NOT Net Income
+        if "net_income" in params:
+            net_income = params["net_income"]
+            
+            # Check if accidentally using net income
+            if abs(owner_earnings - net_income) < abs(owner_earnings - (ocf - capex)):
+                logger.warning(
+                    f"⚠️ SUSPICIOUS: Owner Earnings ({owner_earnings:.1f}M) "
+                    f"very close to Net Income ({net_income:.1f}M)\n"
+                    f"OCF: {ocf:.1f}M, CapEx: {capex:.1f}M\n"
+                    f"Verify calculation is using cash flow, not accounting earnings!"
+                )
+        
+        logger.info(f"✅ Owner Earnings methodology valid: OCF {ocf:.1f}M - CapEx {capex:.1f}M = {owner_earnings:.1f}M")
+        return True
+    
+    def validate_dcf_assumptions(self, params: Dict[str, Any]) -> bool:
+        """
+        Validate DCF assumptions are conservative.
+        
+        Buffett principles:
+        - Growth rates should be modest (3-7% typical)
+        - Discount rate should reflect risk (8-12% typical)
+        - Terminal growth should be low (2-3% typical)
+        
+        Args:
+            params: DCF calculation parameters
+            
+        Returns:
+            True if valid
+            
+        Raises:
+            MethodologyError: If assumptions are unrealistic
+        """
+        growth_rate = params.get("growth_rate", 0)
+        discount_rate = params.get("discount_rate", 0)
+        terminal_growth = params.get("terminal_growth", 0)
+        
+        # Validate growth rate (should be 0-15%)
+        if growth_rate < 0 or growth_rate > 0.15:
+            logger.warning(
+                f"⚠️ Growth rate {growth_rate*100:.1f}% is outside typical range (0-15%)\n"
+                f"Buffett typically uses conservative growth assumptions (3-7%)"
+            )
+        
+        # Validate discount rate (should be 8-15%)
+        if discount_rate < 0.08 or discount_rate > 0.15:
+            logger.warning(
+                f"⚠️ Discount rate {discount_rate*100:.1f}% is outside typical range (8-15%)\n"
+                f"Buffett typically uses 10% as minimum hurdle rate"
+            )
+        
+        # Validate terminal growth (should be 2-4%)
+        if terminal_growth < 0 or terminal_growth > 0.05:
+            logger.warning(
+                f"⚠️ Terminal growth {terminal_growth*100:.1f}% is outside typical range (2-4%)\n"
+                f"Terminal growth should not exceed long-term GDP growth"
+            )
+        
+        logger.info(
+            f"✅ DCF assumptions validated: "
+            f"Growth {growth_rate*100:.1f}%, "
+            f"Discount {discount_rate*100:.1f}%, "
+            f"Terminal {terminal_growth*100:.1f}%"
+        )
+        return True
+    
+    def validate_roic_calculation(self, params: Dict[str, Any]) -> bool:
+        """
+        Validate ROIC calculation methodology.
+        
+        ROIC = NOPAT / Invested Capital
+        
+        Args:
+            params: ROIC calculation parameters
+            
+        Returns:
+            True if valid
+            
+        Raises:
+            MethodologyError: If using wrong methodology
+        """
+        required = {"nopat", "invested_capital"}
+        
+        if not required.issubset(set(params.keys())):
+            logger.warning(
+                f"⚠️ ROIC calculation missing standard fields\n"
+                f"Required: {required}\n"
+                f"Provided: {set(params.keys())}"
+            )
+        
+        return True
+
+
+__all__ = [
+    "MethodologyValidator",
+    "MethodologyError"
+]
+```
+
+---
+
+### File 3: Data Validator
+
+**File:** Create `src/validation/data_validator.py`
+
+```python
+"""
+Data consistency validation for basīrah.
+
+Cross-validates financial data from multiple sources to catch:
+- API data inconsistencies
+- Stale cache data
+- Data entry errors
+"""
+
+import logging
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class DataInconsistencyError(Exception):
+    """Raised when data sources disagree significantly."""
+    pass
+
+
+class DataValidator:
+    """
+    Validates data consistency across multiple sources.
+    
+    Cross-checks:
+    - GuruFocus data vs SEC filings
+    - Current year vs historical trends
+    - Calculated metrics vs reported metrics
+    """
+    
+    def __init__(self, variance_threshold: float = 0.05):
+        """
+        Initialize data validator.
+        
+        Args:
+            variance_threshold: Maximum acceptable variance (default 5%)
+        """
+        self.variance_threshold = variance_threshold
+    
+    def validate_revenue_consistency(
+        self,
+        gurufocus_revenue: float,
+        sec_revenue: float,
+        ticker: str
+    ) -> bool:
+        """
+        Validate revenue matches across GuruFocus and SEC filings.
+        
+        Args:
+            gurufocus_revenue: Revenue from GuruFocus API
+            sec_revenue: Revenue from SEC 10-K
+            ticker: Company ticker
+            
+        Returns:
+            True if consistent
+            
+        Raises:
+            DataInconsistencyError: If variance exceeds threshold
+        """
+        if not gurufocus_revenue or not sec_revenue:
+            logger.warning(f"⚠️ {ticker}: Missing revenue data (GF: {gurufocus_revenue}, SEC: {sec_revenue})")
+            return True  # Can't validate without both sources
+        
+        variance = abs(gurufocus_revenue - sec_revenue) / sec_revenue
+        
+        if variance > self.variance_threshold:
+            error_msg = (
+                f"❌ Revenue data inconsistency for {ticker}\n"
+                f"GuruFocus: ${gurufocus_revenue:.1f}M\n"
+                f"SEC Filing: ${sec_revenue:.1f}M\n"
+                f"Variance: {variance*100:.1f}% (threshold: {self.variance_threshold*100:.1f}%)\n"
+                f"\n"
+                f"This suggests data quality issues. Analysis may be unreliable."
+            )
+            logger.error(error_msg)
+            raise DataInconsistencyError(error_msg)
+        
+        logger.info(f"✅ {ticker} revenue consistency validated (variance: {variance*100:.2f}%)")
+        return True
+    
+    def validate_fcf_calculation(
+        self,
+        operating_cash_flow: float,
+        capex: float,
+        reported_fcf: Optional[float] = None
+    ) -> bool:
+        """
+        Validate Free Cash Flow calculation.
+        
+        FCF should equal OCF - CapEx (approximately)
+        
+        Args:
+            operating_cash_flow: Operating cash flow
+            capex: Capital expenditures
+            reported_fcf: Reported FCF (if available)
+            
+        Returns:
+            True if valid
+        """
+        calculated_fcf = operating_cash_flow - capex
+        
+        if reported_fcf:
+            variance = abs(calculated_fcf - reported_fcf) / abs(reported_fcf)
+            
+            if variance > self.variance_threshold:
+                logger.warning(
+                    f"⚠️ FCF calculation discrepancy\n"
+                    f"Calculated (OCF - CapEx): ${calculated_fcf:.1f}M\n"
+                    f"Reported FCF: ${reported_fcf:.1f}M\n"
+                    f"Variance: {variance*100:.1f}%\n"
+                    f"Using calculated value."
+                )
+        
+        logger.info(f"✅ FCF validated: OCF {operating_cash_flow:.1f}M - CapEx {capex:.1f}M = {calculated_fcf:.1f}M")
+        return True
+    
+    def validate_shares_outstanding(
+        self,
+        basic_shares: float,
+        diluted_shares: float,
+        ticker: str
+    ) -> float:
+        """
+        Validate shares outstanding and choose appropriate count.
+        
+        For valuation, should use diluted shares (more conservative).
+        
+        Args:
+            basic_shares: Basic shares outstanding
+            diluted_shares: Diluted shares outstanding
+            ticker: Company ticker
+            
+        Returns:
+            Diluted shares (more conservative)
+        """
+        if not diluted_shares:
+            logger.warning(f"⚠️ {ticker}: No diluted shares data, using basic shares")
+            return basic_shares
+        
+        dilution = (diluted_shares - basic_shares) / basic_shares
+        
+        if dilution > 0.10:  # >10% dilution
+            logger.warning(
+                f"⚠️ {ticker}: Significant dilution detected\n"
+                f"Basic shares: {basic_shares:.1f}M\n"
+                f"Diluted shares: {diluted_shares:.1f}M\n"
+                f"Dilution: {dilution*100:.1f}%"
+            )
+        
+        logger.info(f"✅ Using diluted shares: {diluted_shares:.1f}M (dilution: {dilution*100:.2f}%)")
+        return diluted_shares
+
+
+__all__ = [
+    "DataValidator",
+    "DataInconsistencyError"
+]
+```
+
+---
+
+### File 4: Consistency Tester
+
+**File:** Create `src/validation/consistency_tester.py`
+
+```python
+"""
+Determinism and consistency testing for basīrah.
+
+Tests that same company produces same results across multiple runs.
+Critical for ensuring reliable batch processing.
+"""
+
+import logging
+from typing import List, Dict, Any
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+class ConsistencyError(Exception):
+    """Raised when consistency test fails."""
+    pass
+
+
+class ConsistencyTester:
+    """
+    Tests analysis determinism and consistency.
+    
+    Validates that running the same analysis multiple times
+    produces consistent results (within acceptable variance).
+    """
+    
+    def __init__(self, variance_threshold: float = 0.01):
+        """
+        Initialize consistency tester.
+        
+        Args:
+            variance_threshold: Maximum acceptable variance (default 1%)
+        """
+        self.variance_threshold = variance_threshold
+    
+    def test_analysis_consistency(
+        self,
+        analyze_func: callable,
+        ticker: str,
+        runs: int = 5,
+        **analysis_params
+    ) -> Dict[str, Any]:
+        """
+        Test that analysis produces consistent results.
+        
+        Runs analysis multiple times on same ticker and checks variance.
+        
+        Args:
+            analyze_func: Analysis function to test
+            ticker: Company ticker to analyze
+            runs: Number of test runs (default 5)
+            **analysis_params: Parameters for analysis function
+            
+        Returns:
+            Test results dictionary
+            
+        Raises:
+            ConsistencyError: If variance exceeds threshold
+        """
+        logger.info(f"\n{'='*60}")
+        logger.info(f"CONSISTENCY TEST: {ticker} ({runs} runs)")
+        logger.info(f"{'='*60}")
+        
+        results = []
+        errors = []
+        
+        # Run analysis multiple times
+        for i in range(runs):
+            logger.info(f"\nRun {i+1}/{runs} for {ticker}...")
+            
+            try:
+                start = datetime.now()
+                result = analyze_func(ticker=ticker, **analysis_params)
+                duration = (datetime.now() - start).total_seconds()
+                
+                results.append({
+                    "run": i + 1,
+                    "result": result,
+                    "duration": duration
+                })
+                
+                logger.info(f"✓ Run {i+1} completed in {duration:.1f}s")
+                
+            except Exception as e:
+                logger.error(f"✗ Run {i+1} failed: {e}")
+                errors.append({
+                    "run": i + 1,
+                    "error": str(e)
+                })
+        
+        if errors:
+            error_msg = (
+                f"❌ Consistency test failed for {ticker}\n"
+                f"{len(errors)}/{runs} runs failed with errors"
+            )
+            logger.error(error_msg)
+            raise ConsistencyError(error_msg)
+        
+        # Analyze variance across runs
+        variances = self._calculate_variances(results)
+        
+        # Check if variances exceed threshold
+        failed_metrics = [
+            metric for metric, variance in variances.items()
+            if variance > self.variance_threshold
+        ]
+        
+        if failed_metrics:
+            error_msg = self._build_variance_error(
+                ticker,
+                failed_metrics,
+                variances,
+                results
+            )
+            logger.error(error_msg)
+            raise ConsistencyError(error_msg)
+        
+        # Test passed
+        logger.info(f"\n✅ Consistency test PASSED for {ticker}")
+        logger.info(f"All metrics within {self.variance_threshold*100:.1f}% variance threshold")
+        
+        return {
+            "ticker": ticker,
+            "runs": runs,
+            "variances": variances,
+            "results": results,
+            "pass": True
+        }
+    
+    def _calculate_variances(self, results: List[Dict]) -> Dict[str, float]:
+        """Calculate variance for key metrics across runs."""
+        
+        # Key metrics to check
+        metrics = [
+            "owner_earnings",
+            "intrinsic_value",
+            "roic",
+            "margin_of_safety"
+        ]
+        
+        variances = {}
+        
+        for metric in metrics:
+            values = []
+            for run_data in results:
+                result = run_data["result"]
+                value = result.get(metric)
+                if value is not None:
+                    values.append(float(value))
+            
+            if len(values) < 2:
+                # Can't calculate variance
+                continue
+            
+            # Calculate variance as (max - min) / min
+            min_val = min(values)
+            max_val = max(values)
+            
+            if min_val == 0:
+                variance = 0 if max_val == 0 else 1.0
+            else:
+                variance = (max_val - min_val) / min_val
+            
+            variances[metric] = variance
+            
+            logger.info(
+                f"  {metric}: {min_val:.2f} - {max_val:.2f} "
+                f"(variance: {variance*100:.2f}%)"
+            )
+        
+        return variances
+    
+    def _build_variance_error(
+        self,
+        ticker: str,
+        failed_metrics: List[str],
+        variances: Dict[str, float],
+        results: List[Dict]
+    ) -> str:
+        """Build detailed error message for variance failures."""
+        
+        error_lines = [
+            f"❌ CONSISTENCY TEST FAILED: {ticker}",
+            "",
+            f"The following metrics exceeded {self.variance_threshold*100:.1f}% variance threshold:",
+            ""
+        ]
+        
+        for metric in failed_metrics:
+            variance = variances[metric]
+            values = [
+                r["result"].get(metric)
+                for r in results
+                if r["result"].get(metric) is not None
+            ]
+            
+            error_lines.append(
+                f"  {metric}:"
+            )
+            error_lines.append(
+                f"    Variance: {variance*100:.2f}% (threshold: {self.variance_threshold*100:.1f}%)"
+            )
+            error_lines.append(
+                f"    Values: {values}"
+            )
+            error_lines.append("")
+        
+        error_lines.extend([
+            "This indicates NON-DETERMINISTIC analysis!",
+            "The agent is producing different results for the same company.",
+            "",
+            "This MUST be fixed before batch processing can be trusted."
+        ])
+        
+        return "\n".join(error_lines)
+    
+    def test_multiple_tickers(
+        self,
+        analyze_func: callable,
+        tickers: List[str],
+        runs_per_ticker: int = 3,
+        **analysis_params
+    ) -> Dict[str, Any]:
+        """
+        Test consistency across multiple tickers.
+        
+        Args:
+            analyze_func: Analysis function to test
+            tickers: List of tickers to test
+            runs_per_ticker: Number of runs per ticker
+            **analysis_params: Parameters for analysis function
+            
+        Returns:
+            Summary of all tests
+            
+        Raises:
+            ConsistencyError: If any ticker fails consistency test
+        """
+        logger.info(f"\n{'='*60}")
+        logger.info(f"MULTI-TICKER CONSISTENCY TEST")
+        logger.info(f"Testing {len(tickers)} tickers, {runs_per_ticker} runs each")
+        logger.info(f"{'='*60}")
+        
+        results = {}
+        failures = []
+        
+        for ticker in tickers:
+            try:
+                result = self.test_analysis_consistency(
+                    analyze_func=analyze_func,
+                    ticker=ticker,
+                    runs=runs_per_ticker,
+                    **analysis_params
+                )
+                results[ticker] = result
+                
+            except ConsistencyError as e:
+                logger.error(f"✗ {ticker} failed consistency test")
+                failures.append(ticker)
+                results[ticker] = {
+                    "ticker": ticker,
+                    "pass": False,
+                    "error": str(e)
+                }
+        
+        # Summary
+        logger.info(f"\n{'='*60}")
+        logger.info(f"CONSISTENCY TEST SUMMARY")
+        logger.info(f"{'='*60}")
+        logger.info(f"Tickers tested: {len(tickers)}")
+        logger.info(f"Passed: {len(tickers) - len(failures)}")
+        logger.info(f"Failed: {len(failures)}")
+        
+        if failures:
+            logger.error(f"\nFailed tickers: {failures}")
+            raise ConsistencyError(
+                f"Consistency test failed for {len(failures)} tickers: {failures}"
+            )
+        
+        logger.info(f"\n✅ All {len(tickers)} tickers passed consistency test!")
+        
+        return {
+            "tickers_tested": len(tickers),
+            "all_passed": len(failures) == 0,
+            "failures": failures,
+            "results": results
+        }
+
+
+__all__ = [
+    "ConsistencyTester",
+    "ConsistencyError"
+]
+```
+
+---
+
+### File 5: Package Init
+
+**File:** Create `src/validation/__init__.py`
+
+```python
+"""
+Validation layer for basīrah.
+
+Ensures analysis quality through:
+- Mandatory tool usage validation
+- Methodology compliance checks
+- Data consistency validation
+- Determinism testing
+"""
+
+from src.validation.synthesis_validator import (
+    SynthesisValidator,
+    ValidationError,
+    CalculationRequirement
+)
+from src.validation.methodology_validator import (
+    MethodologyValidator,
+    MethodologyError
+)
+from src.validation.data_validator import (
+    DataValidator,
+    DataInconsistencyError
+)
+from src.validation.consistency_tester import (
+    ConsistencyTester,
+    ConsistencyError
+)
+
+__all__ = [
+    "SynthesisValidator",
+    "ValidationError",
+    "CalculationRequirement",
+    "MethodologyValidator",
+    "MethodologyError",
+    "DataValidator",
+    "DataInconsistencyError",
+    "ConsistencyTester",
+    "ConsistencyError"
+]
+```
+
+---
+
+### File 6: Test Suite
+
+**File:** Create `tests/test_quality_control.py`
+
+```python
+"""
+Comprehensive quality control tests for basīrah.
+
+Tests validation layer functionality and determinism.
+"""
+
+import pytest
+from src.validation import (
+    SynthesisValidator,
+    ValidationError,
+    MethodologyValidator,
+    MethodologyError,
+    DataValidator,
+    DataInconsistencyError,
+    ConsistencyTester,
+    ConsistencyError
+)
+
+
+class TestSynthesisValidator:
+    """Test synthesis validation."""
+    
+    def test_catches_missing_calculations(self):
+        """Test that validator catches skipped calculations."""
+        validator = SynthesisValidator()
+        
+        # Simulate synthesis that skips tools
+        # (no tool calls tracked)
+        
+        with pytest.raises(ValidationError) as exc_info:
+            validator.validate_synthesis_complete(analysis_type="deep_dive")
+        
+        assert "skipped required calculations" in str(exc_info.value).lower()
+    
+    def test_passes_with_all_calculations(self):
+        """Test that validator passes when all calculations done."""
+        validator = SynthesisValidator()
+        
+        # Simulate proper synthesis
+        validator.track_tool_call("calculator_tool", {"calculation_type": "owner_earnings"}, {})
+        validator.track_tool_call("calculator_tool", {"calculation_type": "roic"}, {})
+        validator.track_tool_call("calculator_tool", {"calculation_type": "dcf"}, {})
+        validator.track_tool_call("calculator_tool", {"calculation_type": "margin_of_safety"}, {})
+        
+        # Should pass
+        assert validator.validate_synthesis_complete(analysis_type="deep_dive") is True
+
+
+class TestMethodologyValidator:
+    """Test methodology validation."""
+    
+    def test_rejects_net_income_for_owner_earnings(self):
+        """Test that validator rejects net income usage."""
+        validator = MethodologyValidator()
+        
+        # Try to use net income (wrong!)
+        with pytest.raises(MethodologyError):
+            validator.validate_owner_earnings({"net_income": 500})
+    
+    def test_accepts_fcf_methodology(self):
+        """Test that validator accepts correct methodology."""
+        validator = MethodologyValidator()
+        
+        # Correct methodology
+        params = {
+            "operating_cash_flow": 700,
+            "capex": 100
+        }
+        
+        assert validator.validate_owner_earnings(params) is True
+
+
+class TestDataValidator:
+    """Test data consistency validation."""
+    
+    def test_catches_revenue_discrepancy(self):
+        """Test that validator catches data inconsistencies."""
+        validator = DataValidator(variance_threshold=0.05)
+        
+        # Significant discrepancy (>5%)
+        with pytest.raises(DataInconsistencyError):
+            validator.validate_revenue_consistency(
+                gurufocus_revenue=2000,
+                sec_revenue=2200,  # 10% difference
+                ticker="TEST"
+            )
+    
+    def test_accepts_consistent_data(self):
+        """Test that validator accepts consistent data."""
+        validator = DataValidator(variance_threshold=0.05)
+        
+        # Small discrepancy (<5%)
+        assert validator.validate_revenue_consistency(
+            gurufocus_revenue=2000,
+            sec_revenue=2050,  # 2.5% difference
+            ticker="TEST"
+        ) is True
+
+
+class TestConsistencyTester:
+    """Test consistency testing."""
+    
+    def test_catches_inconsistent_results(self):
+        """Test that tester catches non-deterministic behavior."""
+        
+        def inconsistent_func(ticker, **kwargs):
+            """Mock function that returns different results."""
+            import random
+            return {
+                "intrinsic_value": random.uniform(200, 300),
+                "owner_earnings": random.uniform(500, 700)
+            }
+        
+        tester = ConsistencyTester(variance_threshold=0.01)
+        
+        # Should fail due to variance
+        with pytest.raises(ConsistencyError):
+            tester.test_analysis_consistency(
+                analyze_func=inconsistent_func,
+                ticker="TEST",
+                runs=5
+            )
+    
+    def test_passes_consistent_results(self):
+        """Test that tester passes deterministic behavior."""
+        
+        def consistent_func(ticker, **kwargs):
+            """Mock function that returns same results."""
+            return {
+                "intrinsic_value": 250.0,
+                "owner_earnings": 600.0,
+                "roic": 25.0,
+                "margin_of_safety": 15.0
+            }
+        
+        tester = ConsistencyTester(variance_threshold=0.01)
+        
+        # Should pass
+        result = tester.test_analysis_consistency(
+            analyze_func=consistent_func,
+            ticker="TEST",
+            runs=5
+        )
+        
+        assert result["pass"] is True
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+```
+
+---
+
+## INTEGRATION
+
+### Modify BuffettAgent to Use Validators
+
+**File:** Modify `src/agent/buffett_agent.py`
+
+**Add imports at top:**
+```python
+from src.validation import (
+    SynthesisValidator,
+    MethodologyValidator,
+    ValidationError,
+    MethodologyError
+)
+```
+
+**Modify `__init__` method:**
+```python
+def __init__(self):
+    # ... existing init code ...
+    
+    # Initialize validators
+    self.synthesis_validator = SynthesisValidator()
+    self.methodology_validator = MethodologyValidator()
+```
+
+**Modify `_synthesize_analysis` method:**
+
+Find this method and add validation:
+
+```python
+def _synthesize_analysis(self, current_year_analysis: str, prior_summaries: List[str]) -> Dict[str, Any]:
+    """
+    Synthesize multi-year analysis into final investment thesis.
+    
+    NOW WITH VALIDATION: Ensures synthesis uses required tools.
+    """
+    
+    # Reset validator for this synthesis
+    self.synthesis_validator.reset()
+    
+    # ... existing synthesis code ...
+    
+    # Track all tool calls during synthesis
+    for i in range(max_iterations):
+        response = llm.generate(...)
+        
+        # Track tool calls
+        if response.has_tool_calls():
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.name
+                params = tool_call.params
+                
+                # Validate calculation parameters BEFORE execution
+                if tool_name == "calculator_tool":
+                    calc_type = params.get("calculation_type")
+                    
+                    # Validate methodology
+                    if calc_type == "owner_earnings":
+                        try:
+                            self.methodology_validator.validate_owner_earnings(params)
+                        except MethodologyError as e:
+                            logger.error(f"Methodology validation failed: {e}")
+                            # Force retry with correct methodology
+                            continue
+                    
+                    # Validate DCF assumptions
+                    elif calc_type == "dcf":
+                        self.methodology_validator.validate_dcf_assumptions(params)
+                
+                # Execute tool
+                result = execute_tool(tool_call)
+                
+                # Track for validation
+                self.synthesis_validator.track_tool_call(tool_name, params, result)
+    
+    # CRITICAL VALIDATION: Check all required calculations were done
+    try:
+        self.synthesis_validator.validate_synthesis_complete(analysis_type="deep_dive")
+    except ValidationError as e:
+        logger.error(f"Synthesis validation failed: {e}")
+        
+        # REJECT THIS ANALYSIS - DO NOT SAVE
+        raise ValidationError(
+            "Analysis rejected due to validation failure. "
+            "Required calculations were skipped. "
+            "This analysis would produce hallucinated valuations."
+        )
+    
+    # ... rest of synthesis code ...
+    
+    return result
+```
+
+---
+
+## TESTING PROTOCOL
+
+### Before Phase 8 Batch Processing
+
+**Step 1: Unit Tests**
+```bash
+# Run validation tests
+pytest tests/test_quality_control.py -v
+
+# Expected: All tests pass
+```
+
+**Step 2: Consistency Test (Critical)**
+```python
+# Create test script: tests/run_consistency_test.py
+
+from src.agent.buffett_agent import BuffettAgent
+from src.validation import ConsistencyTester
+
+# Initialize
+agent = BuffettAgent()
+tester = ConsistencyTester(variance_threshold=0.01)  # 1% max variance
+
+# Test tickers (diverse set)
+TEST_TICKERS = [
+    "FDS",   # Known problem case
+    "AAPL",  # Large cap tech
+    "MSFT",  # Large cap tech #2
+    "JPM",   # Financial
+    "COST",  # Retail
+    "V",     # Payments
+    "JNJ",   # Healthcare
+    "XOM",   # Energy
+    "DIS",   # Media
+    "PG"     # Consumer staples
+]
+
+# Run comprehensive test
+print("Testing 10 diverse companies, 5 runs each...")
+print("This will take ~2 hours but is CRITICAL for Phase 8\n")
+
+result = tester.test_multiple_tickers(
+    analyze_func=agent.analyze_company,
+    tickers=TEST_TICKERS,
+    runs_per_ticker=5,
+    deep_dive=True,
+    years_to_analyze=8
+)
+
+if result["all_passed"]:
+    print("\n✅ SUCCESS!")
+    print("All 10 tickers passed consistency test with <1% variance")
+    print("basīrah is ready for Phase 8 batch processing!")
+else:
+    print("\n❌ FAILURE!")
+    print(f"Failed tickers: {result['failures']}")
+    print("DO NOT proceed to Phase 8 until fixed!")
+```
+
+**Run test:**
+```bash
+python tests/run_consistency_test.py
+```
+
+**Expected output:**
+```
+Testing 10 diverse companies, 5 runs each...
+This will take ~2 hours but is CRITICAL for Phase 8
+
+============================================================
+CONSISTENCY TEST: FDS (5 runs)
+============================================================
+
+Run 1/5 for FDS...
+✓ Run 1 completed in 285.3s
+Run 2/5 for FDS...
+✓ Run 2 completed in 278.1s
+Run 3/5 for FDS...
+✓ Run 3 completed in 292.7s
+Run 4/5 for FDS...
+✓ Run 4 completed in 281.4s
+Run 5/5 for FDS...
+✓ Run 5 completed in 287.9s
+
+  owner_earnings: 603.50 - 603.50 (variance: 0.00%)
+  intrinsic_value: 264.60 - 264.60 (variance: 0.00%)
+  roic: 55.2 - 55.2 (variance: 0.00%)
+  margin_of_safety: 0.8 - 0.8 (variance: 0.00%)
+
+✅ Consistency test PASSED for FDS
+All metrics within 1.0% variance threshold
+
+[... repeat for all 10 tickers ...]
+
+============================================================
+CONSISTENCY TEST SUMMARY
+============================================================
+Tickers tested: 10
+Passed: 10
+Failed: 0
+
+✅ All 10 tickers passed consistency test!
+```
+
+---
+
+## SUCCESS CRITERIA
+
+### Phase 7.5 Complete When:
+
+**Unit Tests:**
+- [ ] All validation tests pass
+- [ ] Synthesis validator catches skipped tools
+- [ ] Methodology validator catches Net Income usage
+- [ ] Data validator catches inconsistencies
+
+**Integration:**
+- [ ] BuffettAgent uses validators
+- [ ] Validation errors logged properly
+- [ ] Invalid analyses rejected (not saved)
+
+**Consistency Testing:**
+- [ ] 10 diverse tickers tested
+- [ ] 5 runs per ticker (50 total analyses)
+- [ ] All metrics <1% variance
+- [ ] Zero failures
+
+**Quality Gates:**
+- [ ] Synthesis ALWAYS uses calculator_tool
+- [ ] Owner Earnings ALWAYS uses FCF methodology
+- [ ] Results deterministic across runs
+- [ ] Invalid analyses blocked from database
+
+---
+
+## ROLLOUT PLAN
+
+### Phase 7.5 Implementation (6-8 hours)
+
+**Hour 1-2: Core Validators**
+- Build SynthesisValidator
+- Build MethodologyValidator
+- Unit tests
+
+**Hour 3-4: Data & Consistency**
+- Build DataValidator
+- Build ConsistencyTester
+- Unit tests
+
+**Hour 5-6: Integration**
+- Modify BuffettAgent
+- Add validation hooks
+- Test single analysis
+
+**Hour 7-8: Comprehensive Testing**
+- Run 10-ticker consistency test
+- Verify <1% variance
+- Document results
+
+### After Phase 7.5 Complete:
+
+✅ **THEN and ONLY THEN proceed to Phase 8 testing**
+- Batch processing will be reliable
+- Results will be consistent
+- Can trust portfolio decisions
+
+---
+
+## COST ESTIMATE
+
+### Consistency Testing Cost:
+
+```
+10 tickers × 5 runs × $4 per deep dive = $200
+
+This is ESSENTIAL investment to ensure quality.
+Finding bugs before Phase 8 saves thousands in wasted batch costs.
+```
+
+---
+
+## CRITICAL REMINDERS
+
+1. **DO NOT skip consistency testing** - It's the only way to verify the fix works
+2. **DO NOT proceed to Phase 8** until all 10 tickers pass consistency test
+3. **Synthesis MUST use calculator_tool** - Never allow "estimating" valuations
+4. **Owner Earnings MUST use FCF** - Never allow Net Income usage
+5. **Test results MUST be deterministic** - <1% variance is non-negotiable
+
+---
+
+## CONCLUSION
+
+Phase 7.5 fixes a **production-breaking bug** where the agent sometimes hallucinated valuations instead of calculating them. This validation layer:
+
+1. **Catches the bug** - Detects when synthesis skips required tools
+2. **Prevents hallucinations** - Blocks invalid analyses from being saved
+3. **Ensures methodology** - Validates Buffett principles are followed
+4. **Verifies determinism** - Tests that results are consistent
+
+**This is CRITICAL infrastructure** that must be in place before Phase 8 batch processing. Without it, batch processing would produce unreliable results.
+
+**After Phase 7.5, basīrah will have production-grade quality control!** 🎯
+
+---
+
+*Phase 7.5: Quality Control & Validation Layer*
+*Estimated: 6-8 hours | Critical Bug Fix*
+*Prerequisites: Phase 6C.1 ✅ | Phase 7 ✅*
+*Status: Ready for Implementation*

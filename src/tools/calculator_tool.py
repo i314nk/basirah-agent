@@ -556,13 +556,22 @@ class CalculatorTool(Tool):
         Returns:
             Standard response with 1 (compliant) or 0 (non-compliant)
         """
-        # Extract inputs
-        total_debt = data["total_debt"]
-        total_assets = data["total_assets"]
-        liquid_assets = data["cash_and_liquid_assets"]
-        market_cap = data["market_cap"]
-        receivables = data["accounts_receivable"]
-        activities = data["business_activities"]
+        # Extract and convert inputs to floats (handle string inputs from LLM)
+        try:
+            total_debt = float(data["total_debt"]) if data["total_debt"] not in [None, "", "N/A"] else 0.0
+            total_assets = float(data["total_assets"])
+            liquid_assets = float(data["cash_and_liquid_assets"]) if data["cash_and_liquid_assets"] not in [None, "", "N/A"] else 0.0
+            market_cap = float(data["market_cap"])
+            receivables = float(data["accounts_receivable"]) if data["accounts_receivable"] not in [None, "", "N/A"] else 0.0
+            activities = data.get("business_activities", [])
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"Invalid numeric value in Sharia compliance data. "
+                f"All financial fields must be numbers. Error: {e}. "
+                f"Data received: total_debt={data.get('total_debt')}, "
+                f"total_assets={data.get('total_assets')}, "
+                f"market_cap={data.get('market_cap')}"
+            )
 
         # Validate non-negative values
         if total_debt < 0:
@@ -576,15 +585,15 @@ class CalculatorTool(Tool):
         if receivables < 0:
             raise ValueError("accounts_receivable cannot be negative")
 
-        # Calculate ratios
-        debt_to_assets = total_debt / total_assets
-        liquid_to_market = liquid_assets / market_cap
-        receivables_to_market = receivables / market_cap
+        # Calculate ratios per AAOIFI standards
+        debt_to_market_cap = total_debt / market_cap              # AAOIFI: Debt/Market Cap < 33%
+        liquid_to_market = liquid_assets / market_cap             # AAOIFI: Liquid/Market Cap < 33%
+        receivables_to_assets = receivables / total_assets        # AAOIFI: AR/Total Assets < 50%
 
         # Check against thresholds
-        debt_pass = debt_to_assets < self.SHARIA_DEBT_THRESHOLD
+        debt_pass = debt_to_market_cap < self.SHARIA_DEBT_THRESHOLD
         liquid_pass = liquid_to_market < self.SHARIA_LIQUID_THRESHOLD
-        receivables_pass = receivables_to_market < self.SHARIA_RECEIVABLES_THRESHOLD
+        receivables_pass = receivables_to_assets < self.SHARIA_RECEIVABLES_THRESHOLD
 
         # Check business activities
         prohibited_found = [act for act in activities if act in self.PROHIBITED_ACTIVITIES]
@@ -595,26 +604,26 @@ class CalculatorTool(Tool):
 
         # Build detailed breakdown
         breakdown = {
-            "debt_to_assets": {
-                "value": debt_to_assets,
-                "formatted": self._format_percentage(debt_to_assets),
+            "debt_to_market_cap": {
+                "value": debt_to_market_cap,
+                "formatted": self._format_percentage(debt_to_market_cap),
                 "threshold": f"{self.SHARIA_DEBT_THRESHOLD*100:.0f}%",
                 "status": "PASS" if debt_pass else "FAIL",
-                "description": "Total Debt / Total Assets"
+                "description": "Total Debt / Market Capitalization (AAOIFI)"
             },
             "liquid_to_market_cap": {
                 "value": liquid_to_market,
                 "formatted": self._format_percentage(liquid_to_market),
                 "threshold": f"{self.SHARIA_LIQUID_THRESHOLD*100:.0f}%",
                 "status": "PASS" if liquid_pass else "FAIL",
-                "description": "(Cash + Liquid Assets) / Market Cap"
+                "description": "(Cash + Liquid Assets) / Market Capitalization (AAOIFI)"
             },
-            "receivables_to_market_cap": {
-                "value": receivables_to_market,
-                "formatted": self._format_percentage(receivables_to_market),
+            "receivables_to_total_assets": {
+                "value": receivables_to_assets,
+                "formatted": self._format_percentage(receivables_to_assets),
                 "threshold": f"{self.SHARIA_RECEIVABLES_THRESHOLD*100:.0f}%",
                 "status": "PASS" if receivables_pass else "FAIL",
-                "description": "Accounts Receivable / Market Cap"
+                "description": "Accounts Receivable / Total Assets (AAOIFI)"
             },
             "business_screening": {
                 "activities_checked": activities,
@@ -866,18 +875,18 @@ class CalculatorTool(Tool):
         if all_pass:
             return (
                 "Company is Sharia COMPLIANT. All financial ratios within AAOIFI thresholds "
-                "(Debt/Assets <33%, Liquid/Market Cap <33%, Receivables/Market Cap <50%) "
+                "(Debt/Market Cap <33%, Liquid/Market Cap <33%, Receivables/Total Assets <50%) "
                 "and no prohibited business activities detected."
             )
 
         # Build failure message
         failures = []
         if not debt:
-            failures.append("Debt/Assets ratio exceeds 33% threshold")
+            failures.append("Debt/Market Cap ratio exceeds 33% threshold")
         if not liquid:
             failures.append("Liquid Assets/Market Cap exceeds 33% threshold")
         if not receivables:
-            failures.append("Receivables/Market Cap exceeds 50% threshold")
+            failures.append("Receivables/Total Assets exceeds 50% threshold")
         if not business:
             failures.append(f"Prohibited activities found: {', '.join(prohibited)}")
 

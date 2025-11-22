@@ -17,16 +17,16 @@
 
 ## Overview
 
-**basīrah** (Arabic: بَصِيرَة, meaning "insight" or "foresight") is an AI investment agent that embodies Warren Buffett's value investing philosophy. It analyzes companies by reading SEC filings, financial data, and market research to generate comprehensive investment theses in Buffett's authentic voice.
+**basīrah** (Arabic: بَصِيرَة, meaning "insight" or "foresight") is an AI investment agent applying Warren Buffett's 8 core investment principles systematically. It analyzes companies by reading SEC filings, financial data, and market research to generate comprehensive investment theses using a framework-driven, analytical approach.
 
 ### What Makes basīrah Unique
 
-- **📖 Reads Full 10-K Filings** - Analyzes 200+ page annual reports like Warren Buffett does
-- **⚡ Smart Quick Screen** - Get INVESTIGATE/PASS guidance before spending on full analysis
+- **📖 Strategic Filing Analysis** - Latest 10-K + 5 years of MD&A sections for management track record
+- **⚡ Tiered GuruFocus-First** - Quick Screen (all companies) + Deep Dive (BUY candidates only)
 - **☪️ Sharia Compliance** - AAOIFI-standard Islamic finance screening for halal investing
-- **📊 Multi-Year Analysis** - Configurable 1-10 year trend analysis for deep insights
-- **🧠 Adaptive Context Management** - Handles any company size with intelligent summarization
-- **💬 Authentic Buffett Voice** - Generates theses that sound like Berkshire Hathaway shareholder letters
+- **📊 Required Multi-Year Analysis** - 5-10 years of historical data for trend validation
+- **🧠 Mental Models Validation** - Charlie Munger's framework for systematic skepticism
+- **💡 Framework-Driven Analysis** - Professional, systematic application of investment principles
 - **💰 Real-Time Cost Tracking** - Transparent token usage and cost display for every analysis
 - **🌍 Arabic Translation** - One-click translation with proper RTL formatting for global investors
 - **🌐 Professional Web UI** - Beautiful Streamlit interface for easy access

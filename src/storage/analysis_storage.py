@@ -262,6 +262,11 @@ class AnalysisStorage:
         thesis = result.get('thesis', '') or result.get('analysis', '')
         thesis_preview = thesis[:500] if thesis else None
 
+        # Get batch metadata if present
+        batch_id = metadata.get('batch_id')
+        batch_stage_name = metadata.get('batch_stage')
+        batch_stage_index = metadata.get('batch_stage_index')
+
         # Insert into database
         query = """
         INSERT INTO analyses (
@@ -273,7 +278,8 @@ class AnalysisStorage:
             cost, duration_seconds,
             token_usage_input, token_usage_output,
             thesis_preview, thesis_full,
-            file_path
+            file_path,
+            batch_id, batch_stage_name, batch_stage_index
         ) VALUES (
             %s, %s, %s, %s,
             %s, %s, %s, %s,
@@ -283,7 +289,8 @@ class AnalysisStorage:
             %s, %s,
             %s, %s,
             %s, %s,
-            %s
+            %s,
+            %s, %s, %s
         ) RETURNING id
         """
 
@@ -297,7 +304,8 @@ class AnalysisStorage:
             cost, duration,
             token_usage.get('input_tokens'), token_usage.get('output_tokens'),
             thesis_preview, thesis,
-            file_path
+            file_path,
+            batch_id, batch_stage_name, batch_stage_index
         )
 
         with self.db.get_cursor() as cur:
@@ -413,51 +421,64 @@ class AnalysisStorage:
             Dict with success status and count of deleted analyses
         """
         try:
+            # Check if company exists
+            company_query = "SELECT ticker, total_analyses FROM companies WHERE ticker = %s"
+            company = self.db.execute_query(company_query, (ticker,))
+
+            if not company:
+                logger.warning(f"Company not found: {ticker}")
+                return {
+                    'success': False,
+                    'message': f'Company {ticker} not found',
+                    'deleted_count': 0
+                }
+
             # Get all analyses for this company
             query = "SELECT analysis_id, file_path FROM analyses WHERE ticker = %s"
             analyses = self.db.execute_query(query, (ticker,))
 
-            if not analyses:
-                logger.warning(f"No analyses found for company: {ticker}")
-                return {
-                    'success': False,
-                    'message': f'No analyses found for {ticker}',
-                    'deleted_count': 0
-                }
-
             deleted_count = 0
             failed_deletions = []
 
-            # Delete each analysis
-            for analysis in analyses:
-                analysis_id = analysis['analysis_id']
-                file_path = self.storage_root / analysis['file_path']
+            # Delete each analysis if any exist
+            if analyses:
+                for analysis in analyses:
+                    analysis_id = analysis['analysis_id']
+                    file_path = self.storage_root / analysis['file_path']
 
-                try:
-                    # Delete from database
-                    delete_query = "DELETE FROM analyses WHERE analysis_id = %s"
-                    self.db.execute_update(delete_query, (analysis_id,))
+                    try:
+                        # Delete from database
+                        delete_query = "DELETE FROM analyses WHERE analysis_id = %s"
+                        self.db.execute_update(delete_query, (analysis_id,))
 
-                    # Delete file
-                    if file_path.exists():
-                        file_path.unlink()
+                        # Delete file
+                        if file_path.exists():
+                            file_path.unlink()
 
-                    deleted_count += 1
-                    logger.info(f"Deleted analysis: {analysis_id}")
+                        deleted_count += 1
+                        logger.info(f"Deleted analysis: {analysis_id}")
 
-                except Exception as e:
-                    logger.error(f"Failed to delete analysis {analysis_id}: {e}")
-                    failed_deletions.append(analysis_id)
+                    except Exception as e:
+                        logger.error(f"Failed to delete analysis {analysis_id}: {e}")
+                        failed_deletions.append(analysis_id)
+            else:
+                logger.info(f"No analyses found for {ticker}, deleting company record only")
 
-            # Delete company record
-            company_query = "DELETE FROM companies WHERE ticker = %s"
-            self.db.execute_update(company_query, (ticker,))
+            # Delete company record (even if no analyses found - handles orphaned records)
+            delete_company_query = "DELETE FROM companies WHERE ticker = %s"
+            self.db.execute_update(delete_company_query, (ticker,))
 
             logger.info(f"Deleted company {ticker} and {deleted_count} analyses")
 
+            message = f'Deleted {ticker}'
+            if deleted_count > 0:
+                message += f' and {deleted_count} analyses'
+            else:
+                message += ' (no analyses found)'
+
             return {
                 'success': True,
-                'message': f'Deleted {ticker} and {deleted_count} analyses',
+                'message': message,
                 'deleted_count': deleted_count,
                 'failed': failed_deletions
             }
@@ -499,6 +520,229 @@ class AnalysisStorage:
         except Exception as e:
             logger.error(f"Failed to get storage stats: {e}")
             return {}
+
+    def save_batch(self, batch_summary: Dict[str, Any]) -> int:
+        """
+        Save batch processing summary to database.
+
+        Args:
+            batch_summary: Batch summary from BatchProcessor.get_summary()
+
+        Returns:
+            Database ID of saved batch
+        """
+        try:
+            # Extract batch information
+            batch_id = batch_summary.get('batch_id')
+            batch_name = batch_summary.get('batch_name', batch_id)
+            protocol_name = batch_summary.get('protocol', 'Unknown')
+            protocol_description = batch_summary.get('protocol_description', '')
+            status = batch_summary.get('status', 'complete')
+            total_companies = batch_summary.get('total_companies', 0)
+            start_time = batch_summary.get('start_time')
+            end_time = batch_summary.get('end_time')
+            duration_seconds = batch_summary.get('duration_seconds')
+            total_cost = batch_summary.get('total_cost', 0.0)
+
+            # Serialize stage stats and recommendations as JSON
+            import json
+            stage_stats_json = json.dumps(batch_summary.get('stages', []))
+            top_recommendations_json = json.dumps(batch_summary.get('top_recommendations', []))
+
+            # Insert batch summary
+            query = """
+            INSERT INTO batch_summaries (
+                batch_id, batch_name,
+                protocol_id, protocol_name, protocol_description,
+                status,
+                total_companies, start_time, end_time, duration_seconds, total_cost,
+                stage_stats, top_recommendations
+            ) VALUES (
+                %s, %s,
+                %s, %s, %s,
+                %s,
+                %s, %s, %s, %s, %s,
+                %s::jsonb, %s::jsonb
+            )
+            ON CONFLICT (batch_id) DO UPDATE SET
+                batch_name = EXCLUDED.batch_name,
+                status = EXCLUDED.status,
+                end_time = EXCLUDED.end_time,
+                duration_seconds = EXCLUDED.duration_seconds,
+                total_cost = EXCLUDED.total_cost,
+                stage_stats = EXCLUDED.stage_stats,
+                top_recommendations = EXCLUDED.top_recommendations,
+                updated_at = NOW()
+            RETURNING id
+            """
+
+            params = (
+                batch_id, batch_name,
+                protocol_name.lower().replace(' ', '_'), protocol_name, protocol_description,
+                status,
+                total_companies, start_time, end_time, duration_seconds, total_cost,
+                stage_stats_json, top_recommendations_json
+            )
+
+            with self.db.get_cursor() as cur:
+                cur.execute(query, params)
+                result = cur.fetchone()
+                db_batch_id = result['id']
+
+            logger.info(f"Saved batch summary: {batch_name} (ID: {db_batch_id})")
+            return db_batch_id
+
+        except Exception as e:
+            logger.error(f"Failed to save batch summary: {e}")
+            raise
+
+    def link_analysis_to_batch(self, analysis_db_id: int, batch_db_id: int, stage_index: int, stage_name: str):
+        """
+        Link an analysis to a batch in the batch_analyses junction table.
+
+        Args:
+            analysis_db_id: Database ID of the analysis
+            batch_db_id: Database ID of the batch
+            stage_index: Index of the stage in the protocol
+            stage_name: Name of the stage
+        """
+        try:
+            query = """
+            INSERT INTO batch_analyses (batch_id, analysis_id, stage_index, stage_name)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (batch_id, analysis_id) DO NOTHING
+            """
+
+            self.db.execute_update(query, (batch_db_id, analysis_db_id, stage_index, stage_name))
+            logger.debug(f"Linked analysis {analysis_db_id} to batch {batch_db_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to link analysis to batch: {e}")
+            raise
+
+    def get_batches(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        protocol: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve batch summaries from database.
+
+        Args:
+            limit: Maximum number of batches to return
+            offset: Number of batches to skip
+            protocol: Filter by protocol ID
+            status: Filter by status ('complete', 'running', etc.)
+
+        Returns:
+            List of batch summary dictionaries
+        """
+        try:
+            # Build query
+            query = "SELECT * FROM v_batch_summary WHERE 1=1"
+            params = []
+
+            if protocol:
+                query += " AND protocol_id = %s"
+                params.append(protocol.lower().replace(' ', '_'))
+
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+
+            query += " ORDER BY start_time DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+
+            results = self.db.execute_query(query, tuple(params))
+
+            # Convert to list of dicts
+            batches = []
+            for row in results:
+                batch = dict(row)
+                # Parse JSONB fields
+                import json
+                if batch.get('stage_stats'):
+                    batch['stages'] = json.loads(batch['stage_stats']) if isinstance(batch['stage_stats'], str) else batch['stage_stats']
+                batches.append(batch)
+
+            logger.info(f"Retrieved {len(batches)} batches")
+            return batches
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve batches: {e}")
+            return []
+
+    def get_batch(self, batch_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve single batch by batch_id.
+
+        Args:
+            batch_id: Batch ID string
+
+        Returns:
+            Batch summary dictionary or None
+        """
+        try:
+            query = "SELECT * FROM v_batch_summary WHERE batch_id = %s"
+            results = self.db.execute_query(query, (batch_id,))
+
+            if not results:
+                return None
+
+            batch = dict(results[0])
+
+            # Parse JSONB fields
+            import json
+            if batch.get('stage_stats'):
+                batch['stages'] = json.loads(batch['stage_stats']) if isinstance(batch['stage_stats'], str) else batch['stage_stats']
+            if batch.get('top_recommendations'):
+                batch['top_recommendations'] = json.loads(batch['top_recommendations']) if isinstance(batch['top_recommendations'], str) else batch['top_recommendations']
+
+            logger.info(f"Retrieved batch: {batch_id}")
+            return batch
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve batch {batch_id}: {e}")
+            return None
+
+    def get_batch_analyses(self, batch_id: str, stage_index: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get all analyses for a batch, optionally filtered by stage.
+
+        Args:
+            batch_id: Batch ID string
+            stage_index: Optional stage index to filter by
+
+        Returns:
+            List of analysis dictionaries
+        """
+        try:
+            query = """
+            SELECT a.*, ba.stage_index, ba.stage_name
+            FROM batch_summaries bs
+            JOIN batch_analyses ba ON bs.id = ba.batch_id
+            JOIN analyses a ON ba.analysis_id = a.id
+            WHERE bs.batch_id = %s
+            """
+            params = [batch_id]
+
+            if stage_index is not None:
+                query += " AND ba.stage_index = %s"
+                params.append(stage_index)
+
+            query += " ORDER BY ba.stage_index, a.ticker"
+
+            results = self.db.execute_query(query, tuple(params))
+
+            analyses = [dict(row) for row in results]
+            logger.info(f"Retrieved {len(analyses)} analyses for batch {batch_id}")
+            return analyses
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve batch analyses: {e}")
+            return []
 
 
 __all__ = ["AnalysisStorage"]

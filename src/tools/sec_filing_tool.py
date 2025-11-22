@@ -122,6 +122,9 @@ class SECFilingTool(Tool):
         "financial_statements": r"Item\s+8[\.\s\-]+Financial\s+Statements"
     }
 
+    # Phase 9: Qualitative sections for moat/management/competitive analysis
+    QUALITATIVE_SECTIONS = ["business", "risk_factors", "mda"]
+
     @property
     def name(self) -> str:
         """Tool name for agent reference."""
@@ -878,7 +881,7 @@ class SECFilingTool(Tool):
         """
         try:
             # Get full text first
-            soup = BeautifulSoup(html_content, 'lxml')
+            soup = BeautifulSoup(html_content, 'xml')
             for tag in soup(['script', 'style', 'table']):
                 tag.decompose()
 
@@ -974,6 +977,130 @@ class SECFilingTool(Tool):
         text = re.sub(r'\n{3,}', '\n\n', text)
 
         return text.strip()
+
+    # =========================================================================
+    # PHASE 9: QUALITATIVE ANALYSIS
+    # =========================================================================
+
+    def extract_qualitative_sections_for_analysis(
+        self,
+        html_content: str
+    ) -> Dict[str, str]:
+        """
+        Phase 9: Extract all qualitative sections from 10-K for deep analysis.
+
+        Extracts the three key qualitative sections needed for:
+        - Moat assessment (business description)
+        - Management quality (MD&A)
+        - Competitive position (business + risk factors)
+
+        Args:
+            html_content: Raw HTML from SEC 10-K filing
+
+        Returns:
+            Dict with three sections:
+            {
+                "business_description": "Item 1. Business (full text)",
+                "risk_factors": "Item 1A. Risk Factors (full text)",
+                "mda": "Item 7. Management Discussion & Analysis (full text)"
+            }
+
+        Notes:
+            - All three sections extracted in one pass (efficient)
+            - Each section is cleaned and formatted
+            - If a section is not found, value will be error message
+            - Use this for Phase 9 qualitative deep dives only
+
+        Usage:
+            >>> tool = SECFilingTool()
+            >>> filing = tool.execute(ticker="AAPL", filing_type="10-K", section="full")
+            >>> sections = tool.extract_qualitative_sections_for_analysis(filing["data"]["content"])
+            >>> print(sections["business_description"][:500])
+        """
+        logger.info("[PHASE 9] Extracting qualitative sections for deep analysis...")
+
+        # Parse HTML once
+        try:
+            soup = BeautifulSoup(html_content, 'xml')
+
+            # Remove unwanted elements
+            for tag in soup(['script', 'style', 'table']):
+                tag.decompose()
+
+            full_text = soup.get_text()
+
+            logger.debug(f"Parsed HTML: {len(full_text)} characters")
+
+        except Exception as e:
+            error_msg = f"Error parsing HTML: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "business_description": error_msg,
+                "risk_factors": error_msg,
+                "mda": error_msg
+            }
+
+        # Extract each section
+        sections = {}
+
+        for section_key in self.QUALITATIVE_SECTIONS:
+            try:
+                pattern = self.SECTION_PATTERNS.get(section_key)
+
+                if not pattern:
+                    sections[section_key] = f"No pattern defined for section: {section_key}"
+                    continue
+
+                # Find section header
+                match = re.search(pattern, full_text, re.IGNORECASE)
+
+                if not match:
+                    sections[section_key] = (
+                        f"Section '{section_key}' not found in filing. "
+                        f"Filing may use non-standard formatting."
+                    )
+                    logger.warning(f"Section '{section_key}' not found")
+                    continue
+
+                start_pos = match.start()
+
+                # Find next section (Item X.) to determine end
+                next_section_match = re.search(
+                    r'Item\s+\d+[A-Z]?[\.\s\-]',
+                    full_text[start_pos + 50:],
+                    re.IGNORECASE
+                )
+
+                if next_section_match:
+                    end_pos = start_pos + 50 + next_section_match.start()
+                else:
+                    # No next section, take rest of document
+                    end_pos = len(full_text)
+
+                # Extract section text
+                section_text = full_text[start_pos:end_pos]
+
+                # Clean text
+                cleaned_section = self._clean_text(section_text)
+
+                sections[section_key] = cleaned_section
+
+                logger.info(
+                    f"[PHASE 9] Extracted '{section_key}': "
+                    f"{len(cleaned_section)} characters"
+                )
+
+            except Exception as e:
+                error_msg = f"Error extracting section '{section_key}': {str(e)}"
+                logger.error(error_msg)
+                sections[section_key] = error_msg
+
+        # Return with standardized keys
+        return {
+            "business_description": sections.get("business", "Section not found"),
+            "risk_factors": sections.get("risk_factors", "Section not found"),
+            "mda": sections.get("mda", "Section not found")
+        }
 
     # =========================================================================
     # UTILITY METHODS

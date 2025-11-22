@@ -1,7 +1,8 @@
 # Phase 7: LLM Abstraction Layer
 
-**Status:** ✅ Complete (Claude-only, quality-focused)
-**Date:** 2025-11-06
+**Status:** ✅ Complete + Architecture Refactor (v7.5.4)
+**Date:** 2025-11-06 (Initial) → 2025-11-10 (Architecture Refactor)
+**Current Providers:** Claude + Kimi K2
 
 ---
 
@@ -51,47 +52,63 @@ These documents contain **outdated information** referencing Ollama integration 
 
 ### What Phase 7 Delivered
 
-✅ **LLM Abstraction Layer**
-- Provider-agnostic architecture
+✅ **LLM Abstraction Layer (v7.5.4 - Refactored)**
+- True plug-and-play provider architecture
+- Each provider implements native ReAct loop
+- No hardcoded provider logic in BuffettAgent
 - Clean factory pattern
-- Universal ReAct Loop for future providers
 - Extended Thinking integration
 
-✅ **Production Setup (Claude Only)**
+✅ **Production Setup (Claude + Kimi K2)**
 ```bash
-# .env
+# .env - Use Claude (Recommended)
 LLM_MODEL=claude-sonnet-4.5
 ANTHROPIC_API_KEY=your_key_here
+
+# OR use Kimi K2 (~60% cheaper)
+LLM_MODEL=kimi-k2-thinking
+KIMI_API_KEY=your_key_here
 ```
 
 ✅ **Quality Focus**
-- 95% analysis quality
+- 95% analysis quality (Claude)
 - Complete 10-section investment theses
-- Reliable Extended Thinking
-- Handles 200K+ token contexts
+- Reliable Extended Thinking / Reasoning
+- Handles 200K+ token contexts (Claude), 256K (Kimi)
 
 ### What Was Removed
 
-❌ **Ollama Integration (Local & Cloud)**
+❌ **v7.5.4 (2025-11-10): UniversalReActLoop**
+- JSON-based tool calling (unnecessary complexity)
+- Hardcoded provider routing in BuffettAgent
+- 479 lines of duplicated ReAct logic
+- Each provider now implements its own native ReAct loop
+
+❌ **v7.0 (2025-11-06): Ollama Integration (Local & Cloud)**
 - Poor analysis quality ("horribly" per user feedback)
 - Incomplete/inaccurate investment theses
 - Ollama Cloud context limitations (500 errors)
 - Complex setup not justified by results
 
-**Details:** See [OLLAMA_REMOVAL.md](./OLLAMA_REMOVAL.md)
+**Details:** See [OLLAMA_REMOVAL.md](./OLLAMA_REMOVAL.md) and [Phase 7.5 CHANGELOG](../phase_7.5/CHANGELOG.md#754-2025-11-10---major-architecture-refactor-true-plug-and-play-llm-providers)
 
-### Future Provider Support
+### Current & Future Provider Support
 
-The architecture remains ready for future high-quality providers:
+The architecture makes adding new providers trivial (~300 lines):
+
+**Currently Supported:**
+- ✅ **Claude Sonnet 4.5** - Premium quality (95%), Extended Thinking
+- ✅ **Kimi K2 Thinking** - Good quality (~85-90%), ~60% cheaper, 256K context
 
 **Planned Evaluation:**
-- OpenAI GPT-5 (when released)
-- Google Gemini Ultra/2.0 (when available)
+- 🔜 OpenAI GPT-5 (when released)
+- 🔜 Google Gemini Ultra/2.0 (when available)
 
-**Requirements:**
-- 90%+ quality threshold
-- Extended Thinking or equivalent
-- Reliable 336K+ character handling
+**Requirements for New Providers:**
+- 85%+ quality threshold
+- Extended Thinking / reasoning capability
+- Reliable 200K+ token handling
+- Native tool calling support
 - Complete structured thesis generation
 
 ---
@@ -123,7 +140,7 @@ The architecture remains ready for future high-quality providers:
 
 ---
 
-**Phase 7 Status:** ✅ Complete
-**Current Provider:** Claude only
-**Architecture:** Ready for future providers
+**Phase 7 Status:** ✅ Complete + Architecture Refactor (v7.5.4)
+**Current Providers:** Claude + Kimi K2 (plug-and-play!)
+**Architecture:** True provider-agnostic, native ReAct loops
 **Next Steps:** Evaluate GPT-5/Gemini when available

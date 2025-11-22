@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 from src.llm.base import BaseLLMProvider, LLMProvider, LLMMessage, LLMResponse
 from src.llm.config import LLMConfig
 from src.llm.providers.claude import ClaudeProvider
+from src.llm.providers.kimi import KimiProvider
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,8 @@ class LLMFactory:
 
     # Provider class mapping
     PROVIDER_CLASSES = {
-        LLMProvider.CLAUDE: ClaudeProvider
+        LLMProvider.CLAUDE: ClaudeProvider,
+        LLMProvider.KIMI: KimiProvider
     }
 
     @classmethod
@@ -78,7 +80,8 @@ class LLMFactory:
         # Initialize provider
         try:
             model_id = model_config["model_id"]
-            provider = provider_class(model_id, **kwargs)
+            # Pass model_name as keyword argument to avoid conflicts
+            provider = provider_class(model_name=model_id, **kwargs)
 
             # Check if provider is available
             if not provider.is_available():
@@ -222,7 +225,8 @@ class LLMClient:
             "model_id": self.provider.model_name,
             "description": config.get("description"),
             "cost": config.get("cost"),
-            "quality": config.get("quality")
+            "quality": config.get("quality"),
+            "knowledge_cutoff": config.get("knowledge_cutoff", "Unknown")
         }
 
 

@@ -9,8 +9,9 @@ import logging
 from typing import Dict, Any, List
 from datetime import datetime
 from dotenv import load_dotenv
-import anthropic
 
+from src.llm import LLMClient
+from src.llm.config import LLMConfig
 from src.tools.calculator_tool import CalculatorTool
 from src.tools.gurufocus_tool import GuruFocusTool
 from src.tools.web_search_tool import WebSearchTool
@@ -29,15 +30,15 @@ class ShariaScreener:
     Financial Institutions) standards for screening.
     """
 
-    MODEL = "claude-sonnet-4-20250514"
-    MAX_TOKENS = 8000  # Response limit (reduced to allow larger filings in context)
-    THINKING_BUDGET = 6000  # Extended thinking budget (must be < MAX_TOKENS)
+    # Provider-agnostic configuration (uses selected LLM)
+    MAX_TOKENS = 8000  # Response limit
+    THINKING_BUDGET = 6000  # Extended thinking for quality reasoning (but MUST use tools!)
     MAX_ITERATIONS = 15  # Maximum tool call iterations
 
     # AAOIFI Financial Ratio Thresholds
     DEBT_THRESHOLD = 0.30  # Debt/Market Cap < 30%
     CASH_THRESHOLD = 0.30  # (Cash + Interest Securities)/Market Cap < 30%
-    AR_THRESHOLD = 0.50    # Accounts Receivable/Market Cap < 50%
+    AR_THRESHOLD = 0.50    # Accounts Receivable/Total Assets < 50%
     INTEREST_INCOME_THRESHOLD = 0.05  # Interest Income/Revenue < 5%
 
     # Prohibited Business Activities
@@ -52,18 +53,35 @@ class ShariaScreener:
         "music or entertainment (strict interpretation)"
     ]
 
-    def __init__(self, api_key: str = None):
+    def __init__(
+        self,
+        model_key: str = None,
+        enable_validation: bool = True,
+        max_validation_iterations: int = 3
+    ):
         """
-        Initialize Sharia screener.
+        Initialize Sharia screener with provider-agnostic LLM.
 
         Args:
-            api_key: Anthropic API key
+            model_key: LLM model to use (defaults to environment LLM_MODEL)
+            enable_validation: Whether to enable Phase 7.6B validation (default: True)
+            max_validation_iterations: Maximum validation iterations (default: 3)
         """
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found")
+        # Initialize LLM client (provider-agnostic)
+        model_key = model_key or os.getenv("LLM_MODEL") or LLMConfig.get_default_model()
+        self.llm = LLMClient(model_key=model_key)
 
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Get provider info
+        provider_info = self.llm.get_provider_info()
+        logger.info(f"Initialized LLM: {provider_info}")
+
+        # Phase 7.6B: Validation configuration
+        self.enable_validation = enable_validation
+        self.max_validation_iterations = max_validation_iterations
+        logger.info(
+            f"Validation: {'ENABLED' if enable_validation else 'DISABLED'} "
+            f"(max {max_validation_iterations} iterations)"
+        )
 
         # Initialize all 4 tools for data gathering
         logger.info("Initializing tools...")
@@ -77,33 +95,73 @@ class ShariaScreener:
 
     def _get_tool_definitions(self) -> List[Dict[str, Any]]:
         """
-        Convert tools to Claude API format.
+        Convert tools to provider-native tool format.
+
+        Uses provider-native web search when available:
+        - Claude: web_search_20250305
+        - Kimi: $web_search builtin_function
 
         Returns:
-            List of tool definitions for Claude API
+            List of tool definitions for API
         """
-        return [
-            {
-                "name": "gurufocus_tool",
-                "description": self.tools["gurufocus"].description,
-                "input_schema": self.tools["gurufocus"].parameters
-            },
-            {
-                "name": "sec_filing_tool",
-                "description": self.tools["sec_filing"].description,
-                "input_schema": self.tools["sec_filing"].parameters
-            },
-            {
+        # Get provider info
+        provider_info = self.llm.get_provider_info()
+        provider = provider_info.get("provider", "").lower()
+
+        tools = []
+
+        # Add standard tools
+        tools.append({
+            "name": "gurufocus_tool",
+            "description": self.tools["gurufocus"].description,
+            "input_schema": self.tools["gurufocus"].parameters
+        })
+        tools.append({
+            "name": "sec_filing_tool",
+            "description": self.tools["sec_filing"].description,
+            "input_schema": self.tools["sec_filing"].parameters
+        })
+        tools.append({
+            "name": "calculator_tool",
+            "description": self.tools["calculator"].description,
+            "input_schema": self.tools["calculator"].parameters
+        })
+
+        # Add provider-native web search
+        if provider == "claude":
+            tools.append({
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 10,
+                "allowed_domains": [
+                    "sec.gov", "investor.com", "nasdaq.com",
+                    "reuters.com", "bloomberg.com", "ft.com",
+                    "wsj.com", "marketwatch.com", "investopedia.com"
+                ]
+            })
+            logger.info("Using Claude native web search (web_search_20250305)")
+
+        elif provider == "kimi":
+            # Use Kimi official $web_search builtin function
+            # Reference: https://platform.moonshot.ai/docs/guide/use-web-search
+            tools.append({
+                "type": "builtin_function",
+                "function": {
+                    "name": "$web_search"
+                }
+            })
+            logger.info("Using Kimi official $web_search builtin function")
+
+        else:
+            # Unknown provider - add regular web_search_tool
+            logger.warning(f"Unknown provider '{provider}' - using standard web_search_tool")
+            tools.append({
                 "name": "web_search_tool",
                 "description": self.tools["web_search"].description,
                 "input_schema": self.tools["web_search"].parameters
-            },
-            {
-                "name": "calculator_tool",
-                "description": self.tools["calculator"].description,
-                "input_schema": self.tools["calculator"].parameters
-            }
-        ]
+            })
+
+        return tools
 
     def _execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -156,7 +214,7 @@ class ShariaScreener:
 
     def screen_company(self, ticker: str) -> Dict[str, Any]:
         """
-        Perform complete Sharia compliance screening using ReAct loop with tools.
+        Perform complete Sharia compliance screening using provider-agnostic ReAct loop.
 
         Args:
             ticker: Stock ticker symbol
@@ -172,162 +230,181 @@ class ShariaScreener:
         """
         logger.info(f"Starting Sharia screening for {ticker}")
 
+        # Get provider info
+        provider_info = self.llm.get_provider_info()
+        provider_name = provider_info['provider']
+        logger.info(f"Using provider: {provider_name}")
+
+        # Build screening prompt
         prompt = self._build_sharia_screening_prompt(ticker)
 
+        # Get provider instance and tool definitions
+        provider = self.llm.provider
+        tool_definitions = self._get_tool_definitions()
+
         try:
-            # Track tokens and tool calls
-            total_input_tokens = 0
-            total_output_tokens = 0
-            tool_calls_made = 0
+            # Run provider's native ReAct loop
+            result = provider.run_react_loop(
+                system_prompt="",  # Sharia prompt is comprehensive and includes everything
+                initial_message=prompt,
+                tools=tool_definitions,
+                tool_executor=self._execute_tool,
+                max_iterations=self.MAX_ITERATIONS,
+                max_tokens=self.MAX_TOKENS,
+                thinking_budget=self.THINKING_BUDGET
+            )
 
-            # Initialize conversation
-            messages = [{
-                "role": "user",
-                "content": prompt
-            }]
+            if not result["success"]:
+                logger.error(f"Sharia screening failed: {result['metadata'].get('error')}")
+                result["metadata"]["analysis_type"] = "sharia_screen"  # Phase 7.6B: For validator
+                return {
+                    "ticker": ticker,
+                    "status": "ERROR",
+                    "analysis": f"Screening failed: {result['metadata'].get('error')}",
+                    "purification_rate": 0.0,
+                    "metadata": result["metadata"]
+                }
 
-            # ReAct loop - agent gathers data using tools, then provides analysis
-            for iteration in range(self.MAX_ITERATIONS):
-                logger.info(f"Iteration {iteration + 1}/{self.MAX_ITERATIONS}")
+            # Extract analysis text
+            analysis_text = result["thesis"]
 
-                response = self.client.messages.create(
-                    model=self.MODEL,
-                    max_tokens=self.MAX_TOKENS,
-                    messages=messages,
-                    tools=self._get_tool_definitions(),
-                    thinking={
-                        "type": "enabled",
-                        "budget_tokens": self.THINKING_BUDGET
+            # CRITICAL: Verify that tools were actually used
+            tool_calls_made = result["metadata"]["tool_calls"]
+
+            # Reject if NO tools used (hallucinated)
+            if tool_calls_made == 0:
+                logger.error(f"Sharia screening REJECTED: No tools were used (hallucinated analysis)")
+                return {
+                    "ticker": ticker,
+                    "status": "ERROR",
+                    "analysis": (
+                        "# SHARIA COMPLIANCE ANALYSIS - REJECTED\n\n"
+                        "**ERROR: Invalid Analysis**\n\n"
+                        "This Sharia compliance analysis was rejected because no tools were used to gather live data. "
+                        "The LLM attempted to provide analysis based solely on training data, which is completely "
+                        "unreliable for religious compliance screening.\n\n"
+                        "Sharia compliance REQUIRES verification with current financial data from SEC filings and "
+                        "financial APIs. Using outdated or hallucinated data for religious rulings is irresponsible "
+                        "and potentially harmful to Muslim investors.\n\n"
+                        "**Resolution:** Please try again. The LLM must use tools to fetch:\n"
+                        "1. Latest 10-K filing (sec_filing_tool)\n"
+                        "2. Current financial data (gurufocus_tool)\n"
+                        "3. Compliance ratio calculations (calculator_tool)\n\n"
+                        f"**Original hallucinated output (DO NOT USE):**\n\n{analysis_text}"
+                    ),
+                    "purification_rate": 0.0,
+                    "metadata": {
+                        "analysis_type": "sharia_screen",
+                        "analysis_date": datetime.now().isoformat(),
+                        "error": "No tools used - hallucinated analysis rejected",
+                        "tool_calls_made": 0
                     }
+                }
+
+            # Warn if insufficient tools used (but don't reject - let validator score it)
+            elif tool_calls_made < 3:
+                logger.warning(
+                    f"Sharia screening used only {tool_calls_made} tools "
+                    f"(expected 5+: 1 sec_filing + 3 gurufocus + 1 calculator). "
+                    f"Data quality may be insufficient. Validator will assess quality."
                 )
 
-                total_input_tokens += response.usage.input_tokens
-                total_output_tokens += response.usage.output_tokens
+            # Parse status and purification rate
+            status = self._extract_status(analysis_text)
+            purification_rate = self._extract_purification_rate(analysis_text)
 
-                # Check stop reason
-                stop_reason = response.stop_reason
+            # Calculate cost using provider
+            input_tokens = result["metadata"]["tokens_input"]
+            output_tokens = result["metadata"]["tokens_output"]
 
-                # Extract content blocks
-                assistant_content = []
-                tool_uses = []
+            # Calculate individual costs
+            cost_per_token = self.llm.provider.get_cost_per_token()
+            input_cost = input_tokens * cost_per_token["input"]
+            output_cost = output_tokens * cost_per_token["output"]
+            total_cost = input_cost + output_cost
 
-                for block in response.content:
-                    if block.type == "thinking":
-                        # Include signature if present (required for Extended Thinking)
-                        thinking_block = {
-                            "type": "thinking",
-                            "thinking": block.thinking
-                        }
-                        if hasattr(block, 'signature') and block.signature:
-                            thinking_block["signature"] = block.signature
-                        assistant_content.append(thinking_block)
-                    elif block.type == "text":
-                        assistant_content.append({
-                            "type": "text",
-                            "text": block.text
-                        })
-                    elif block.type == "tool_use":
-                        assistant_content.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input
-                        })
-                        tool_uses.append(block)
+            logger.info(
+                f"Sharia screening complete for {ticker}: {status}, "
+                f"purification {purification_rate:.1f}%, "
+                f"{result['metadata']['tool_calls']} tool calls, cost ${total_cost:.2f}"
+            )
 
-                # Add assistant's response to conversation
-                messages.append({
-                    "role": "assistant",
-                    "content": assistant_content
-                })
-
-                # If agent finished (no tool use), extract final analysis
-                if stop_reason == "end_turn":
-                    logger.info("Agent finished screening")
-
-                    # Extract analysis text
-                    analysis_text = ""
-                    for block in response.content:
-                        if block.type == "text":
-                            analysis_text += block.text
-
-                    # Parse status and purification rate
-                    status = self._extract_status(analysis_text)
-                    purification_rate = self._extract_purification_rate(analysis_text)
-
-                    # Calculate cost
-                    input_cost = (total_input_tokens / 1000) * 0.01
-                    output_cost = (total_output_tokens / 1000) * 0.30
-                    total_cost = input_cost + output_cost
-
-                    logger.info(
-                        f"Sharia screening complete for {ticker}: {status}, "
-                        f"purification {purification_rate:.1f}%, "
-                        f"{tool_calls_made} tool calls, cost ${total_cost:.2f}"
-                    )
-
-                    return {
-                        "ticker": ticker,
-                        "status": status,
-                        "analysis": analysis_text,
-                        "purification_rate": purification_rate,
-                        "metadata": {
-                            "analysis_date": datetime.now().isoformat(),
-                            "standard": "AAOIFI",
-                            "tool_calls_made": tool_calls_made,
-                            "token_usage": {
-                                "input_tokens": total_input_tokens,
-                                "output_tokens": total_output_tokens,
-                                "input_cost": round(input_cost, 2),
-                                "output_cost": round(output_cost, 2),
-                                "total_cost": round(total_cost, 2)
-                            }
-                        }
-                    }
-
-                # If agent used tools, execute them
-                if tool_uses:
-                    tool_results = []
-
-                    for tool_use in tool_uses:
-                        tool_calls_made += 1
-                        result = self._execute_tool(
-                            tool_use.name,
-                            tool_use.input
-                        )
-
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_use.id,
-                            "content": str(result)
-                        })
-
-                    # Add tool results to conversation
-                    messages.append({
-                        "role": "user",
-                        "content": tool_results
-                    })
-
-                    # Continue loop to next iteration
-                    continue
-
-                # If neither end_turn nor tool_use, something unexpected happened
-                logger.warning(f"Unexpected stop reason: {stop_reason}")
-                break
-
-            # If we hit max iterations
-            logger.warning(f"Reached max iterations ({self.MAX_ITERATIONS})")
-
-            return {
+            # Build screening result
+            screening_result = {
                 "ticker": ticker,
-                "status": "ERROR",
-                "analysis": f"Screening incomplete - reached maximum iterations ({self.MAX_ITERATIONS})",
-                "purification_rate": 0.0,
+                "status": status,
+                "analysis": analysis_text,
+                "purification_rate": purification_rate,
                 "metadata": {
-                    "error": "max_iterations_reached"
+                    "analysis_type": "sharia_screen",  # Phase 7.6B: For validator
+                    "analysis_date": datetime.now().isoformat(),
+                    "standard": "AAOIFI",
+                    "provider": provider_name,
+                    "model": provider_info['model_id'],
+                    "tool_calls_made": result["metadata"]["tool_calls"],
+                    "iterations": result["metadata"]["iterations"],
+                    "token_usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "input_cost": round(input_cost, 2),
+                        "output_cost": round(output_cost, 2),
+                        "total_cost": round(total_cost, 2)
+                    }
                 }
             }
 
+            # Phase 7.6B: Validate screening if enabled
+            if self.enable_validation:
+                logger.info("\n" + "=" * 80)
+                logger.info("  Phase 7.6B: Sharia Screening Quality Validation")
+                logger.info("=" * 80)
+
+                try:
+                    critique = self._validate_analysis(screening_result, iteration=0)
+
+                    # Add validation metadata to result
+                    screening_result["validation"] = {
+                        "enabled": True,
+                        "approved": critique.get("approved", False),
+                        "score": critique.get("score", 0),
+                        "overall_assessment": critique.get("overall_assessment", ""),
+                        "strengths": critique.get("strengths", []),
+                        "issues": critique.get("issues", []),
+                        "recommendation": critique.get("recommendation", "unknown")
+                    }
+
+                    # Log validation result
+                    if critique.get("approved", False):
+                        logger.info("✓  Validation PASSED")
+                    else:
+                        logger.warning("⚠️  Validation FAILED - Score: {}/100".format(
+                            critique.get("score", 0)
+                        ))
+                        logger.warning("   Issues found: {}".format(
+                            len(critique.get("issues", []))
+                        ))
+
+                        # Log critical issues for visibility
+                        for issue in critique.get("issues", [])[:5]:  # First 5 issues
+                            if issue.get("severity") == "critical":
+                                logger.error("   [CRITICAL] {}: {}".format(
+                                    issue.get("category", "unknown"),
+                                    issue.get("description", "")
+                                ))
+
+                except Exception as e:
+                    logger.error(f"Validation failed (non-fatal): {e}")
+                    screening_result["validation"] = {
+                        "enabled": True,
+                        "approved": False,
+                        "score": 0,
+                        "overall_assessment": f"Validation error: {str(e)}",
+                        "strengths": [],
+                        "issues": [],
+                        "recommendation": "error"
+                    }
+
+            return screening_result
         except Exception as e:
             logger.error(f"Sharia screening failed for {ticker}: {e}")
             return {
@@ -336,6 +413,7 @@ class ShariaScreener:
                 "analysis": f"Screening failed: {str(e)}",
                 "purification_rate": 0.0,
                 "metadata": {
+                    "analysis_type": "sharia_screen",  # Phase 7.6B: For validator
                     "error": str(e)
                 }
             }
@@ -346,12 +424,53 @@ class ShariaScreener:
         return f"""You are a Sharia compliance analyst specializing in Islamic finance.
 Analyze {ticker} for Sharia (Islamic law) compliance according to AAOIFI standards.
 
-**CRITICAL INSTRUCTIONS:**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  CRITICAL: YOU MUST USE TOOLS FIRST - DO NOT SKIP THIS ⚠️
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+YOU ARE ABSOLUTELY FORBIDDEN FROM PROVIDING ANALYSIS BASED ON TRAINING DATA.
+
+Your FIRST action MUST be to call tools to gather live data. Your training data is from 2024 and is
+completely unreliable for religious compliance screening. Using outdated data for Sharia compliance
+would be religiously irresponsible and potentially harmful to Muslim investors.
+
+MANDATORY TOOL CALLING CHECKLIST - YOU MUST COMPLETE ALL 3 STEPS:
+
+□ STEP 1: Call sec_filing_tool to fetch latest 10-K/20-F filing
+   Parameters: ticker="{ticker}", filing_type="10-K", section="business"
+   Status: ⏳ MUST DO FIRST
+
+□ STEP 2: Call gurufocus_tool AT LEAST 3 TIMES to gather ALL required data
+   Call 2a: gurufocus_tool(ticker="{ticker}", data_type="summary")  # Get market cap, debt
+   Call 2b: gurufocus_tool(ticker="{ticker}", data_type="financials")  # Get cash, AR, revenue
+   Call 2c: gurufocus_tool(ticker="{ticker}", data_type="keyratios")  # Get interest metrics
+   Status: ⏳ MUST DO AFTER STEP 1
+
+□ STEP 3: Call calculator_tool ONCE with ALL gathered data
+   Parameters: calculation="sharia_compliance_check", ticker="{ticker}", + all financial data
+   Status: ⏳ MUST DO AFTER STEP 2 (only when you have ALL required fields)
+
+DO NOT SKIP ANY STEP. DO NOT write analysis text until ALL 3 STEPS are completed.
+
+You must call AT LEAST 5 tools total (1 sec_filing + 3+ gurufocus + 1 calculator) before providing output.
+If you provide output after calling fewer than 5 tools, your analysis will be REJECTED as invalid.
+
+**CRITICAL: WEB_SEARCH_TOOL RESTRICTIONS**
+❌ DO NOT use web_search_tool for financial data (debt, cash, receivables, revenue, market cap)
+❌ DO NOT use web_search for compliance ratios or calculations
+✅ ONLY use web_search for business activity questions (e.g., "Does company operate casinos?")
+✅ ALL financial data MUST come from sec_filing_tool + gurufocus_tool
+
+If gurufocus doesn't have a field, extract it manually from the 10-K filing text, DO NOT web search for it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**TOOL INSTRUCTIONS:**
 
 1. **USE TOOLS TO GATHER LIVE DATA** - You have access to 4 tools:
-   - sec_filing_tool: Fetch actual 10-K annual reports from SEC EDGAR
-   - gurufocus_tool: Get real-time financial metrics and ratios
-   - web_search_tool: Search for recent news or business changes
+   - sec_filing_tool: Fetch actual 10-K annual reports from SEC EDGAR (PRIMARY SOURCE for business + financials)
+   - gurufocus_tool: Get real-time financial metrics and ratios (PRIMARY SOURCE for market data)
+   - web_search_tool: ONLY for business activity questions (NOT for financial data)
    - calculator_tool: Perform accurate calculations
 
 2. **DO NOT RELY ON TRAINING DATA** - Your training data is outdated. You MUST use tools to:
@@ -378,17 +497,33 @@ Step 1: Fetch latest 10-K or 20-F annual report using sec_filing_tool
 - Look for: Business description, revenue breakdown by segment, any prohibited activities
 - Example: sec_filing_tool(ticker="{ticker}", filing_type="10-K", section="business")
 
-Step 2: Get ALL financial metrics using gurufocus_tool (make MULTIPLE calls if needed)
-- REQUIRED DATA YOU MUST GATHER BEFORE USING CALCULATOR:
-  * total_debt (Total interest-bearing debt)
-  * total_assets (Total assets from balance sheet)
-  * cash_and_liquid_assets (Cash + marketable securities)
-  * market_cap (Current market capitalization)
-  * accounts_receivable (Accounts receivable from balance sheet)
-  * total_revenue (Total revenue)
-  * interest_income (Interest income, if any)
-- You may need to call gurufocus_tool with different data_type parameters (financials, summary, keyratios, valuation)
-- Do NOT proceed to calculator until you have gathered ALL of the above data
+Step 2: Get ALL financial metrics using gurufocus_tool (make MULTIPLE calls)
+
+REQUIRED GURUFOCUS CALLS (in this exact sequence):
+
+Call 2a: gurufocus_tool(ticker="{ticker}", data_type="summary")
+Returns: market_cap, total_debt, cash_and_equivalents, latest_price
+→ Extract: market_cap, total_debt, cash (for compliance ratios)
+
+Call 2b: gurufocus_tool(ticker="{ticker}", data_type="financials")
+Returns: Balance sheet and income statement data
+→ Extract: accounts_receivable, total_revenue, cash_and_liquid_assets, total_assets
+
+Call 2c: gurufocus_tool(ticker="{ticker}", data_type="keyratios")
+Returns: Financial ratios and performance metrics
+→ Extract: Any remaining fields (interest coverage, ROE, etc.)
+
+CRITICAL: If gurufocus is missing a required field, check if it's in the 10-K filing you already downloaded.
+DO NOT use web_search to find financial data - extract it from the 10-K text or estimate from available data.
+
+REQUIRED DATA CHECKLIST before calling calculator:
+  ✓ total_debt (from gurufocus summary)
+  ✓ market_cap (from gurufocus summary)
+  ✓ cash_and_liquid_assets (from gurufocus financials)
+  ✓ accounts_receivable (from gurufocus financials)
+  ✓ total_revenue (from gurufocus financials)
+  ✓ total_assets (from gurufocus financials)
+  ✓ interest_income (from gurufocus financials, may be 0)
 
 Step 3: Calculate AAOIFI ratios using calculator_tool
 - CRITICAL: Only call calculator_tool ONCE you have gathered ALL required fields listed above
@@ -417,7 +552,7 @@ Calculate these ratios using LIVE DATA from tools:
 **AAOIFI Financial Thresholds:**
 1. **Debt / Market Capitalization** < {self.DEBT_THRESHOLD * 100}%
 2. **(Cash + Interest-bearing Securities) / Market Cap** < {self.CASH_THRESHOLD * 100}%
-3. **Accounts Receivable / Market Cap** < {self.AR_THRESHOLD * 100}%
+3. **Accounts Receivable / Total Assets** < {self.AR_THRESHOLD * 100}%
 4. **Interest Income / Total Revenue** < {self.INTEREST_INCOME_THRESHOLD * 100}%
 
 All four ratios must pass for compliance.
@@ -493,7 +628,7 @@ OR
 |-------|-------|------------------|--------|
 | **Debt / Market Cap** | X.X% | < 30% | [✅/❌] |
 | **Cash / Market Cap** | X.X% | < 30% | [✅/❌] |
-| **AR / Market Cap** | X.X% | < 50% | [✅/❌] |
+| **AR / Total Assets** | X.X% | < 50% | [✅/❌] |
 | **Interest Income / Revenue** | X.X% | < 5% | [✅/❌] |
 
 **Financial Ratios Verdict:** [✅ All Pass / ❌ Some Fail]
@@ -600,6 +735,36 @@ based on their specific circumstances and interpretation.
 5. **Be educational** - Explain WHY something is compliant/non-compliant
 6. **Be accurate** - This affects people's religious obligations
 7. **Be respectful** - This is about faith, not just finance
+8. **CITE ALL SOURCES** - Every financial metric and business fact requires citation
+
+**CITATION REQUIREMENTS (MANDATORY):**
+
+Every data point in your Sharia analysis MUST include specific source citations.
+This is essential for transparency and verification of religious compliance.
+
+**Citation Format Examples:**
+- "Total Debt $15.2B (GuruFocus Summary, accessed Nov 11, 2025)"
+- "Market Cap $82.5B (GuruFocus Valuation, accessed Nov 11, 2025)"
+- "Debt/Market Cap ratio: $15.2B / $82.5B = 18.4% (calculated from GuruFocus data)"
+- "Revenue breakdown: Software 65%, Services 35% (10-K FY2024, Note 17 - Segment Information, page 87)"
+- "No interest income disclosed (10-K FY2024, Income Statement, page 45)"
+- "Accounts Receivable $12.3B (10-K FY2024, Balance Sheet, page 43)"
+- "Operates casino gaming segment with $500M revenue (10-K FY2024, Business section, page 5)"
+
+**What to cite:**
+✅ ALL financial ratios and their component values (debt, market cap, cash, AR, revenue)
+✅ Business activity descriptions and revenue breakdowns (with 10-K section and page)
+✅ All calculations (show your math with sourced inputs)
+✅ Any claim about prohibited activities (cite 10-K section proving presence/absence)
+✅ Interest income (or explicit statement of no interest income with 10-K reference)
+✅ Scholarly opinions (cite specific AAOIFI standard or scholar name)
+
+**For Sharia compliance, citations serve two purposes:**
+1. **Verification** - Allow scholars and investors to verify your analysis
+2. **Religious obligation** - Investors may need to prove compliance to their own scholars
+
+**Golden Rule:** If you cannot cite the source (with specific 10-K section/page or API data source),
+do not include that data point. Sharia compliance analysis requires bulletproof documentation.
 
 Now perform the complete Sharia compliance screening for {ticker}.
 """
@@ -637,6 +802,262 @@ Now perform the complete Sharia compliance screening for {ticker}.
                     continue
 
         return 0.0
+
+    # ========================================================================
+    # PHASE 7.6B: QUALITY VALIDATION
+    # ========================================================================
+
+    def _validate_analysis(
+        self,
+        analysis_result: Dict[str, Any],
+        iteration: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Validate Sharia screening using Validator Agent.
+
+        Phase 7.6B: Validator Agent reviews screening for quality, methodology,
+        and completeness, providing detailed critique.
+
+        Args:
+            analysis_result: Screening dict from Sharia Agent
+            iteration: Current iteration number (0-based)
+
+        Returns:
+            Validator critique dict with:
+                - approved: bool
+                - score: int (0-100)
+                - overall_assessment: str
+                - strengths: List[str]
+                - issues: List[Dict]
+                - recommendation: str ("approve"|"revise"|"reject")
+        """
+        from src.agent.prompts import get_validator_prompt
+
+        logger.info(f"[VALIDATOR] Reviewing Sharia screening (iteration {iteration + 1})")
+
+        # Get LLM knowledge cutoff for validator context
+        provider_info = self.llm.get_provider_info()
+        knowledge_cutoff = provider_info.get("knowledge_cutoff", "Unknown")
+
+        # Build validator prompt with knowledge cutoff
+        prompt = get_validator_prompt(analysis_result, iteration, knowledge_cutoff)
+
+        # Call validator LLM with tools for verification
+        try:
+            # Get validator tools (web_search and calculator for verification)
+            validator_tools = self._get_validator_tool_definitions()
+
+            # Use provider's native ReAct loop for validation
+            response = self.llm.provider.run_react_loop(
+                system_prompt="You are a validator reviewing Sharia compliance screening. Use tools to verify claims before flagging issues.",
+                initial_message=prompt,
+                tools=validator_tools,
+                tool_executor=self._execute_validator_tool,
+                max_iterations=10,  # Allow validator to call tools
+                max_tokens=8000,
+                thinking_budget=0  # Deterministic validation, no extended thinking needed
+            )
+
+            # Parse JSON response from validator's final output
+            critique = self._parse_json_response(response.get("thesis", ""), "validation")
+
+            # Log validation results
+            score = critique.get('score', 0)
+            approved = critique.get('approved', False)
+            issues_count = len(critique.get('issues', []))
+
+            logger.info(f"[VALIDATOR] Score: {score}/100, Approved: {approved}, Issues: {issues_count}")
+
+            if not approved:
+                # Log issues for visibility
+                for issue in critique.get('issues', []):
+                    severity = issue.get('severity', 'unknown').upper()
+                    category = issue.get('category', 'unknown')
+                    description = issue.get('description', '')
+                    logger.warning(f"[{severity}] {category}: {description}")
+
+            return critique
+
+        except Exception as e:
+            logger.error(f"Validator failed: {e}", exc_info=True)
+            # Return a failed validation instead of crashing
+            return {
+                "approved": False,
+                "score": 0,
+                "overall_assessment": f"Validator error: {str(e)}",
+                "strengths": [],
+                "issues": [{
+                    "severity": "critical",
+                    "category": "validation",
+                    "description": f"Validator failed: {str(e)}",
+                    "how_to_fix": "Check validator configuration and LLM availability"
+                }],
+                "methodology_correct": False,
+                "calculations_complete": False,
+                "sources_adequate": False,
+                "buffett_principles_followed": False,
+                "recommendation": "reject"
+            }
+
+    def _get_validator_tool_definitions(self) -> List[Dict[str, Any]]:
+        """
+        Get tool definitions for validator (web_search, calculator, and gurufocus).
+
+        Validator needs limited tools to verify claims:
+        - web_search: Verify recent events beyond knowledge cutoff (business activities)
+        - calculator: Verify Sharia compliance calculations (ratios, percentages)
+        - gurufocus: Verify financial metrics (revenue sources, debt levels)
+
+        Returns:
+            List of tool definitions in provider-specific format
+        """
+        # Only expose web_search, calculator, and gurufocus to validator
+        validator_tool_names = ["web_search", "calculator", "gurufocus"]
+
+        # Get all tools with provider-native formatting
+        all_tools = self._get_tool_definitions()
+
+        # Filter to only validator tools (handle both standard and builtin_function formats)
+        validator_tools = []
+        for tool in all_tools:
+            # Extract tool name (handle different formats)
+            if tool.get("type") == "builtin_function":
+                # Kimi builtin function (e.g., $web_search)
+                tool_name = tool.get("function", {}).get("name", "")
+            else:
+                # Standard tool (Claude format or converted OpenAI format)
+                tool_name = tool.get("name", "")
+
+            # Check if this tool should be available to validator
+            if any(name in tool_name.lower().replace("$", "") for name in validator_tool_names):
+                validator_tools.append(tool)
+
+        logger.info(f"[VALIDATOR] Tools available: {len(validator_tools)} tools")
+        for tool in validator_tools:
+            if tool.get("type") == "builtin_function":
+                logger.info(f"  - {tool.get('function', {}).get('name', 'unknown')} (builtin)")
+            else:
+                logger.info(f"  - {tool.get('name', 'unknown')}")
+
+        return validator_tools
+
+    def _execute_validator_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute tool for validator with logging.
+
+        Args:
+            tool_name: Name of the tool to execute
+            tool_input: Tool parameters
+
+        Returns:
+            Tool execution result
+        """
+        logger.info(f"[VALIDATOR] Executing {tool_name}")
+
+        # Find the tool
+        tool = self.tools.get(tool_name)
+        if not tool:
+            # Try to find by partial match (e.g., "calculator_tool" -> "calculator")
+            for name, t in self.tools.items():
+                if name.lower() in tool_name.lower():
+                    tool = t
+                    break
+
+        if not tool:
+            logger.warning(f"[VALIDATOR] Tool '{tool_name}' not found")
+            return {
+                "success": False,
+                "error": f"Tool '{tool_name}' not available to validator"
+            }
+
+        try:
+            # Execute tool
+            result = tool.execute(**tool_input)
+
+            # Log success/failure
+            if result.get("success"):
+                logger.info(f"[VALIDATOR] {tool_name} succeeded")
+            else:
+                logger.warning(f"[VALIDATOR] {tool_name} failed: {result.get('error')}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"[VALIDATOR] {tool_name} error: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _parse_json_response(self, text: str, context: str) -> Dict:
+        """
+        Parse JSON response from LLM (handles markdown blocks, text noise, and malformed JSON).
+
+        Args:
+            text: LLM response text
+            context: Context for error reporting
+
+        Returns:
+            Parsed JSON dict
+        """
+        import re
+        import json
+
+        # Remove markdown code blocks
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
+
+        # Extract JSON object (handles text before/after)
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if not json_match:
+            raise ValueError(f"No JSON object found in {context} response")
+
+        json_str = json_match.group(0)
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse full JSON in {context}: {e}")
+            logger.warning(f"JSON string excerpt: {json_str[:500]}...")
+
+            # Fallback: Extract key fields with regex for partial validation results
+            if context == "validation":
+                logger.info("Attempting fallback parsing for validation critique...")
+
+                # Extract score
+                score_match = re.search(r'"score"\s*:\s*(\d+)', json_str)
+                score = int(score_match.group(1)) if score_match else 0
+
+                # Extract approved
+                approved_match = re.search(r'"approved"\s*:\s*(true|false)', json_str, re.IGNORECASE)
+                approved = approved_match.group(1).lower() == 'true' if approved_match else False
+
+                # Extract overall_assessment
+                assessment_match = re.search(r'"overall_assessment"\s*:\s*"([^"]*)"', json_str)
+                assessment = assessment_match.group(1) if assessment_match else f"JSON parse error: {str(e)}"
+
+                logger.info(f"Fallback parsing extracted: score={score}, approved={approved}")
+
+                return {
+                    "approved": approved,
+                    "score": score,
+                    "overall_assessment": assessment,
+                    "strengths": [],
+                    "issues": [{
+                        "severity": "minor",
+                        "category": "validation",
+                        "description": f"Validator JSON was malformed (parse error at char {e.pos}), using fallback parsing. Score and approval extracted successfully.",
+                        "how_to_fix": "N/A - technical issue, not analysis issue"
+                    }],
+                    "methodology_correct": score >= 70,
+                    "calculations_complete": score >= 70,
+                    "sources_adequate": score >= 70,
+                    "buffett_principles_followed": score >= 70,
+                    "recommendation": "approve" if approved else "revise"
+                }
+            else:
+                # For non-validation contexts, raise the error
+                raise ValueError(f"Invalid JSON in {context} response: {e}")
 
 
 __all__ = ["ShariaScreener"]
