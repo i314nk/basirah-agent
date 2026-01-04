@@ -4,7 +4,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)
+![Status](https://img.shields.io/badge/status-archived-red.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-success.svg)
 
 **An AI-powered investment analysis agent that thinks like Warren Buffett**
@@ -424,6 +424,14 @@ MIT License - see [LICENSE](LICENSE) file for details.
 **basīrah is a research and educational tool.**
 
 This software is provided for informational purposes only and does not constitute financial advice. Always conduct your own due diligence and consult with qualified financial advisors before making investment decisions.
+
+---
+
+## Project Status
+
+> **⚠️ This project has been discontinued and archived.**
+>
+> Development concluded and archived. While fully functional, the project's core utility was superseded by the release of native "Deep Research" capabilities in next-generation LLMs (e.g., Gemini, Claude), which can now perform similar long-context analysis out-of-the-box.
 
 ---
 
