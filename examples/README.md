@@ -128,7 +128,7 @@ python examples/error_handling.py
 
 ## Next Steps
 
-- Read `PHASE_5_USER_GUIDE.md` for complete documentation
+- Read `../docs/ARCHITECTURE.md` for complete system documentation
 - Review `docs/BUFFETT_PRINCIPLES.md` for investment philosophy
 - See `docs/ARCHITECTURE.md` for system design
 

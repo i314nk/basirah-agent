@@ -169,45 +169,35 @@ print(json.dumps(result, indent=2))
 "
 ```
 
----
-
 ## Documentation
 
-### User Guides
+### Core Documentation
 
-- **[Phase 5 User Guide](docs/phases/phase_5/PHASE_5_USER_GUIDE.md)** - Context management and adaptive summarization
-- **[UI Guide](docs/phases/phase_6a/UI_README.md)** - Complete Streamlit web interface documentation
-- **[Configurable Years](docs/phases/phase_6a/FEATURE_CONFIGURABLE_YEARS.md)** - How to configure analysis depth
-- **[Cost Display + Arabic Translation](docs/phases/phase_6a/PHASE_6A2_COMPLETION_SUMMARY.md)** - Token tracking, cost display, and multilingual support
+- **[Architecture](docs/ARCHITECTURE.md)** - Complete system design, agent architecture, and technical implementation
+- **[Project Vision](docs/PROJECT_VISION.md)** - Project goals, philosophy, and strategic direction
+- **[Development Guide](docs/DEVELOPMENT.md)** - Setup instructions, development workflow, and contribution guidelines
 
-### Technical Documentation
+### API References
 
-- **[Phase 5 Strategic Review](docs/phases/phase_5/PHASE_5_STRATEGIC_REVIEW.md)** - Progressive summarization architecture
-- **[Adaptive Summarization Fix](docs/phases/phase_5/ADAPTIVE_SUMMARIZATION_FIX.md)** - Handling large 10-K filings
-- **[Complete Thesis Fix](docs/phases/phase_6a/PHASE_6A1_COMPLETE_THESIS_FIX.md)** - Generating comprehensive analyses
+- **[SEC EDGAR API](docs/api_references/sec_edgar_api.md)** - SEC filings integration
+- **[GuruFocus API](docs/api_references/gurufocus_api.md)** - Financial metrics and data
+- **[Brave Search API](docs/api_references/brave_search_api.md)** - Web search integration
 
-### Bug Fixes & Improvements
+### Tool Specifications
 
-- **[Multi-Year Analysis Fixes (2025-11-06)](docs/bug_fixes/2025-11-06_multi_year_analysis_fixes.md)** - Critical fixes for 10-year analyses
-  - Extended Thinking compatibility
-  - Context window management improvements
-  - Margin of safety logic correction
-  - Dynamic fiscal year handling
-  - Missing filing tracking and reporting
-  - Real-time progress updates
+- **[SEC Filing Tool](docs/tool_specs/sec_filing_tool_spec.md)** - 10-K and 10-Q filing analysis
+- **[GuruFocus Tool](docs/tool_specs/gurufocus_tool_spec.md)** - Financial data retrieval
+- **[Web Search Tool](docs/tool_specs/web_search_tool_spec.md)** - Market research and news
+- **[Calculator Tool](docs/tool_specs/calculator_tool_spec.md)** - Financial calculations and metrics
 
-### Development History
+### Examples
 
-- [Phase 1](docs/phases/phase_1/) - Initial implementation and testing
-- [Phase 2](docs/phases/phase_2/) - Tool integration and refinement
-- [Phase 3](docs/phases/phase_3/) - Advanced features
-- [Phase 4](docs/phases/phase_4/) - Production readiness
-- [Phase 5](docs/phases/phase_5/) - Context management (100% coverage)
-- [Phase 6A](docs/phases/phase_6a/) - Web UI and enhancements
-  - Phase 6A.1: Complete thesis fix and configurable years
-  - Phase 6A.2: Cost tracking and Arabic translation
-- [Phase 6B](docs/phases/phase_6b/) - Advanced screening features
-  - Enhanced Quick Screen with INVESTIGATE/PASS recommendations
+See the [examples/](examples/) directory for practical usage examples including:
+- Basic company analysis
+- Quick screening
+- Competitor comparison
+- Error handling patterns
+
   - Sharia Compliance screening with AAOIFI standards
 
 ---
