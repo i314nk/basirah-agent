@@ -1,15 +1,14 @@
-# basīrah - Warren Buffett AI Investment Agent
+# basīrah - Archived AI Investment Research Agent
 
 <div align="center">
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-archived-red.svg)
-![Tests](https://img.shields.io/badge/tests-passing-success.svg)
 
-**An AI-powered investment analysis agent that thinks like Warren Buffett**
+**An archived educational prototype for LLM-assisted investment research, SEC filing analysis, and Sharia-aware screening.**
 
-[Features](#features) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Web UI](#web-ui) • [API](#api-reference)
+[Overview](#overview) • [What It Demonstrates](#what-it-demonstrates) • [Architecture](#architecture) • [Quick Start](#quick-start) • [Project Status](#project-status)
 
 </div>
 
@@ -17,61 +16,117 @@
 
 ## Overview
 
-**basīrah** (Arabic: بَصِيرَة, meaning "insight" or "foresight") is an AI investment agent that embodies Warren Buffett's value investing philosophy. It analyzes companies by reading SEC filings, financial data, and market research to generate comprehensive investment theses in Buffett's authentic voice.
+**basīrah** (Arabic: بَصِيرَة, meaning "insight" or "foresight") is an archived AI investment research prototype. It explored whether an LLM-based agent could gather evidence from company filings, financial-data tools, web research, and calculations to produce structured long-form investment research.
 
-### What Makes basīrah Unique
+The project was built as a hands-on learning system at the intersection of:
 
-- **📖 Reads Full 10-K Filings** - Analyzes 200+ page annual reports like Warren Buffett does
-- **⚡ Smart Quick Screen** - Get INVESTIGATE/PASS guidance before spending on full analysis
-- **☪️ Sharia Compliance** - AAOIFI-standard Islamic finance screening for halal investing
-- **📊 Multi-Year Analysis** - Configurable 1-10 year trend analysis for deep insights
-- **🧠 Adaptive Context Management** - Handles any company size with intelligent summarization
-- **💬 Authentic Buffett Voice** - Generates theses that sound like Berkshire Hathaway shareholder letters
-- **💰 Real-Time Cost Tracking** - Transparent token usage and cost display for every analysis
-- **🌍 Arabic Translation** - One-click translation with proper RTL formatting for global investors
-- **🌐 Professional Web UI** - Beautiful Streamlit interface for easy access
-- **✅ 100% Coverage** - Successfully analyzes all S&P 500 companies
+- AI agents and tool use
+- SEC filing ingestion and long-document analysis
+- Value-investing research workflows
+- Sharia-aware investment screening
+- Streamlit-based research interfaces
+- Local storage of generated analyses
+
+This repository is preserved as a portfolio and learning artifact. It is not an active investment product and should not be used as financial advice.
 
 ---
 
-## Features
+## What It Demonstrates
 
-### 🎯 Core Capabilities
+### AI-agent workflow
 
-- **Enhanced Quick Screen** - 1-year business snapshot with INVESTIGATE/PASS recommendation (2-3 min, $0.75-$1.50)
-- **Deep Dive Analysis** - Comprehensive multi-year investment thesis (5-15 min, $2.50-$7)
-- **Sharia Compliance Screening** - AAOIFI-standard Islamic finance analysis (3-5 min, $1.50-$2.50)
-- **Configurable Depth** - Choose 1-10 years of historical analysis
-- **Economic Moat Detection** - Identifies and analyzes competitive advantages
-- **Management Evaluation** - Assesses CEO quality, capital allocation, and integrity
-- **Valuation (DCF)** - Conservative discounted cash flow analysis
-- **Risk Assessment** - Identifies top 5 risks with detailed analysis
+- ReAct-style investigation loop for tool-assisted analysis
+- Agent prompts for business quality, moat, management, valuation, and risk review
+- LLM provider abstraction for Claude-based analysis
+- Context-management experiments for long SEC filings
 
-- **Analysis History & Search** - PostgreSQL database with powerful multi-criteria search (Phase 6C.1)
-- **Auto-Save** - Every analysis automatically saved to local history database
-- **Portfolio Tracking** - Track your analyzed companies over time
+### Research tools
 
-### 🛠️ Technical Features
+- SEC EDGAR filing retrieval and section extraction
+- Financial-data integration through GuruFocus where configured
+- Web-search tool integration
+- Calculator utilities for financial analysis
+- Sharia screening module based on common Islamic finance screening concepts
 
-- **ReAct Agent Architecture** - Reasoning + Acting with extended thinking (8K budget)
-- **Progressive Summarization** - 3-stage analysis (current year → prior years → synthesis)
-- **Adaptive Strategies** - Automatic routing (standard vs summarization) based on filing size
-- **PostgreSQL Database** - Runs in Docker with full-text search and indexing
-- **Hybrid Storage** - Metadata in database, full content in organized file system
-- **Multi-Criteria Search** - Filter by ticker, type, decision, dates, financial metrics
-- **Tool Integration** - SEC EDGAR, GuruFocus, Web Search, Calculator
-- **Context Management** - Handles filings up to 552K+ characters
-- **Export Options** - JSON, Markdown, Web UI display
+### Application layer
 
-### 🌐 Web Interface
+- Streamlit UI for running analyses and viewing results
+- Cost-estimation and token-usage tracking experiments
+- PostgreSQL-backed analysis history and search experiments
+- Export paths for JSON and Markdown research outputs
 
-- **Streamlit UI** - Professional web application
-- **Real-time Progress** - Live updates during 5-7 minute analyses
-- **Cost Tracking** - Real-time token usage and cost display with session totals
-- **Arabic Translation** - One-click translation with proper RTL formatting
-- **Dynamic Estimates** - Cost and time predictions based on configuration
-- **Export & Share** - Download results as JSON or Markdown
-- **Mobile Responsive** - Works on any device
+---
+
+## What This Project Is Not
+
+basīrah is not:
+
+- a registered investment advisor
+- a trading bot
+- a broker integration
+- a production-grade financial platform
+- a source of buy/sell instructions
+- a substitute for qualified financial or Sharia review
+
+The project is best understood as an educational AI research prototype and an earlier-generation system design experiment.
+
+---
+
+## Project Status
+
+This project is **archived**.
+
+Development concluded after the prototype demonstrated the core research workflow. Newer long-context and deep-research LLM capabilities reduced the need for a standalone single-agent research system, and the next iteration is being explored separately as a cleaner multi-agent workflow.
+
+Current status:
+
+- The repository is kept public as a portfolio artifact.
+- The code may require API keys and local setup to run.
+- Some modules reflect experimental phases rather than a polished product roadmap.
+- The project is not being actively maintained as an investment application.
+
+See also: [`docs/LESSONS_LEARNED.md`](docs/LESSONS_LEARNED.md).
+
+---
+
+## Architecture
+
+High-level flow:
+
+```text
+User request / ticker
+        |
+        v
+Agent orchestration
+        |
+        +--> SEC filing tool
+        +--> financial data tool
+        +--> web search tool
+        +--> calculator tool
+        |
+        v
+Research synthesis
+        |
+        v
+Structured investment memo / exported analysis
+```
+
+Main areas:
+
+```text
+src/
+  agent/      Agent orchestration, prompts, Sharia screener, translation
+  tools/      SEC, GuruFocus, web-search, and calculator integrations
+  llm/        LLM provider abstraction
+  storage/    Analysis history and search experiments
+  ui/         Streamlit application
+
+docs/         Architecture, project vision, tool specs, API notes
+examples/     Example scripts for running analyses and tools
+tests/        Unit/integration-style tests and company-analysis experiments
+```
+
+For the original detailed architecture notes, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
@@ -79,356 +134,89 @@
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- [Anthropic API key](https://console.anthropic.com/) (Claude)
-- [GuruFocus API key](https://www.gurufocus.com/api.php) (optional but recommended)
+- Python 3.10+
+- Anthropic API key for Claude-based analysis
+- GuruFocus API key for some financial-data features, optional but useful
+- PostgreSQL/Docker only if using the historical analysis database features
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/basira-agent.git
-   cd basira-agent
-   ```
+```bash
+git clone https://github.com/i314nk/basirah-agent.git
+cd basirah-agent
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
 
-2. **Create and activate virtual environment** (recommended)
-   ```bash
-   # Create virtual environment
-   python -m venv venv
+Edit `.env` and add the API keys required for the features you want to run.
 
-   # Activate virtual environment
-   # On Windows (Git Bash):
-   source venv/Scripts/activate
-
-   # On Windows (Command Prompt):
-   venv\Scripts\activate.bat
-
-   # On Windows (PowerShell):
-   venv\Scripts\Activate.ps1
-
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your API keys:
-   # ANTHROPIC_API_KEY=your_key_here
-   # GURUFOCUS_API_KEY=your_key_here (optional)
-   ```
-
-### Usage
-
-#### Option 1: Web UI (Recommended)
+### Run the Streamlit UI
 
 ```bash
 streamlit run src/ui/app.py
 ```
 
-Then open [http://localhost:8501](http://localhost:8501) in your browser.
-
-#### Option 2: Python API
+### Run an analysis from Python
 
 ```python
 from src.agent.buffett_agent import WarrenBuffettAgent
 
-# Initialize agent
 agent = WarrenBuffettAgent()
+result = agent.analyze_company("AAPL", deep_dive=True, years_to_analyze=3)
 
-# Run deep dive analysis
-result = agent.analyze_company(
-    ticker="AAPL",
-    deep_dive=True,
-    years_to_analyze=5  # Analyze 5 years (2024-2020)
-)
-
-# Access results
-print(result['decision'])         # BUY, WATCH, or AVOID
-print(result['conviction'])       # HIGH, MODERATE, or LOW
-print(result['thesis'])           # Full investment thesis
-print(result['intrinsic_value'])  # Calculated fair value
+print(result["decision"])
+print(result["thesis"])
 ```
 
-#### Option 3: Command Line
-
-```bash
-python -c "
-from src.agent.buffett_agent import WarrenBuffettAgent
-import json
-
-agent = WarrenBuffettAgent()
-result = agent.analyze_company('AAPL', deep_dive=True, years_to_analyze=3)
-
-print(json.dumps(result, indent=2))
-"
-```
+---
 
 ## Documentation
 
-### Core Documentation
+Core docs:
 
-- **[Architecture](docs/ARCHITECTURE.md)** - Complete system design, agent architecture, and technical implementation
-- **[Project Vision](docs/PROJECT_VISION.md)** - Project goals, philosophy, and strategic direction
-- **[Development Guide](docs/DEVELOPMENT.md)** - Setup instructions, development workflow, and contribution guidelines
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - original detailed architecture notes
+- [`docs/PROJECT_VISION.md`](docs/PROJECT_VISION.md) - original project vision and design intent
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) - development/setup notes
+- [`docs/LESSONS_LEARNED.md`](docs/LESSONS_LEARNED.md) - retrospective and successor-project notes
 
-### API References
+Tool/API notes:
 
-- **[SEC EDGAR API](docs/api_references/sec_edgar_api.md)** - SEC filings integration
-- **[GuruFocus API](docs/api_references/gurufocus_api.md)** - Financial metrics and data
-- **[Brave Search API](docs/api_references/brave_search_api.md)** - Web search integration
-
-### Tool Specifications
-
-- **[SEC Filing Tool](docs/tool_specs/sec_filing_tool_spec.md)** - 10-K and 10-Q filing analysis
-- **[GuruFocus Tool](docs/tool_specs/gurufocus_tool_spec.md)** - Financial data retrieval
-- **[Web Search Tool](docs/tool_specs/web_search_tool_spec.md)** - Market research and news
-- **[Calculator Tool](docs/tool_specs/calculator_tool_spec.md)** - Financial calculations and metrics
-
-### Examples
-
-See the [examples/](examples/) directory for practical usage examples including:
-- Basic company analysis
-- Quick screening
-- Competitor comparison
-- Error handling patterns
-
-  - Sharia Compliance screening with AAOIFI standards
-
----
-
-## Architecture
-
-### System Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      basīrah Agent                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │  Quick Screen│  │  Deep Dive   │  │   Synthesis  │    │
-│  │   (30-60s)   │  │  (5-7 min)   │  │   (Multi-Yr) │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘    │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │         Progressive Summarization Engine              │ │
-│  │  • Stage 1: Current Year (Standard/Adaptive)         │ │
-│  │  • Stage 2: Prior Years (Summarized)                 │ │
-│  │  • Stage 3: Multi-Year Synthesis                     │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │                 Tool Integrations                     │ │
-│  │  • SEC EDGAR (10-K filings)                          │ │
-│  │  • GuruFocus (financial data, ratios)                │ │
-│  │  • Web Search (news, competitive analysis)           │ │
-│  │  • Calculator (DCF, ROIC, owner earnings)            │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-```
-User Input → Validation → Agent Initialization
-                             ↓
-                    Strategy Selection
-                   /                  \
-           Standard (95%)        Adaptive (5%)
-        (Normal filings)      (Large filings)
-                   \                  /
-                    ↓                ↓
-              Current Year Analysis
-                         ↓
-               Prior Years Analysis
-                  (Summarized)
-                         ↓
-            Multi-Year Synthesis
-         (10-Section Complete Thesis)
-                         ↓
-          Decision + Thesis + Metadata
-                         ↓
-              Export (JSON/Markdown)
-```
-
----
-
-## Project Structure
-
-```
-basira-agent/
-├── src/
-│   ├── agent/
-│   │   ├── buffett_agent.py       # Main agent implementation
-│   │   ├── translator.py          # Arabic translation module
-│   │   └── sharia_screener.py     # Sharia compliance screening
-│   ├── tools/
-│   │   ├── sec_filing_tool.py     # SEC EDGAR integration
-│   │   ├── gurufocus_tool.py      # Financial data API
-│   │   ├── web_search_tool.py     # Web search capability
-│   │   └── calculator_tool.py     # Financial calculations
-│   └── ui/
-│       ├── app.py                 # Streamlit main app
-│       ├── components.py          # UI components
-│       └── utils.py               # UI utilities
-│
-├── tests/
-│   ├── test_tools/                # Tool unit tests
-│   ├── test_integration/          # Integration tests
-│   └── test_company/              # Real company tests
-│
-├── docs/
-│   ├── phases/                    # Development phase documentation
-│   │   ├── phase_1/              # Initial implementation
-│   │   ├── phase_2/              # Tool integration
-│   │   ├── phase_3/              # Advanced features
-│   │   ├── phase_4/              # Production readiness
-│   │   ├── phase_5/              # Context management
-│   │   └── phase_6a/             # Web UI
-│   └── sessions/                  # Session summaries
-│
-├── .streamlit/
-│   └── config.toml               # Streamlit theme config
-│
-├── requirements.txt              # Python dependencies
-├── .env.example                  # Environment template
-└── README.md                     # This file
-```
-
----
-
-## API Reference
-
-### WarrenBuffettAgent
-
-Main agent class for investment analysis.
-
-#### `analyze_company(ticker, deep_dive=True, years_to_analyze=3)`
-
-Analyze a company and generate investment thesis.
-
-**Parameters:**
-- `ticker` (str): Stock ticker symbol (e.g., "AAPL")
-- `deep_dive` (bool): If True, comprehensive analysis; if False, quick screen
-- `years_to_analyze` (int): Number of years to analyze (1-10, default 3)
-
-**Returns:**
-- `dict`: Analysis results containing:
-  - `ticker` (str): Company ticker
-  - `decision` (str): "BUY", "WATCH", or "AVOID"
-  - `conviction` (str): "HIGH", "MODERATE", or "LOW"
-  - `thesis` (str): Full investment thesis
-  - `intrinsic_value` (float): Calculated fair value per share
-  - `current_price` (float): Current market price
-  - `margin_of_safety` (float): Percentage discount
-  - `metadata` (dict): Analysis metadata
-
-**Example:**
-
-```python
-from src.agent.buffett_agent import WarrenBuffettAgent
-
-agent = WarrenBuffettAgent()
-
-# Deep dive with 5 years
-result = agent.analyze_company("AAPL", deep_dive=True, years_to_analyze=5)
-
-print(f"Decision: {result['decision']}")
-print(f"Conviction: {result['conviction']}")
-print(f"Intrinsic Value: ${result['intrinsic_value']:.2f}")
-print(f"\n{result['thesis']}")
-```
-
----
-
-## Performance
-
-### Analysis Speed
-
-| Type | Years | Time | Cost |
-|------|-------|------|------|
-| Quick Screen | 1 | 30-60 sec | ~$0.50 |
-| Deep Dive | 1 | 2-3 min | ~$1.50 |
-| Deep Dive | 3 | 5-7 min | ~$2.50 |
-| Deep Dive | 5 | 10-15 min | ~$4.50 |
-| Deep Dive | 10 | 20-30 min | ~$7.00 |
-
-### Test Results
-
-- **100% Success Rate** on S&P 500 companies
-- **Adaptive Strategy** handles large 10-K filings (552K+ characters)
-- **Standard Strategy** covers 95% of companies
+- [`docs/tool_specs/sec_filing_tool_spec.md`](docs/tool_specs/sec_filing_tool_spec.md)
+- [`docs/tool_specs/gurufocus_tool_spec.md`](docs/tool_specs/gurufocus_tool_spec.md)
+- [`docs/tool_specs/web_search_tool_spec.md`](docs/tool_specs/web_search_tool_spec.md)
+- [`docs/tool_specs/calculator_tool_spec.md`](docs/tool_specs/calculator_tool_spec.md)
+- [`docs/api_references/sec_edgar_api.md`](docs/api_references/sec_edgar_api.md)
+- [`docs/api_references/gurufocus_api.md`](docs/api_references/gurufocus_api.md)
+- [`docs/api_references/brave_search_api.md`](docs/api_references/brave_search_api.md)
 
 ---
 
 ## Testing
 
-### Run All Tests
-
 ```bash
 pytest tests/ -v
 ```
 
-### Company-Specific Tests
-
-```bash
-# Test Apple (standard strategy)
-python tests/test_company/test_deep_dive_apple.py
-
-# Test Coca-Cola (adaptive strategy)
-python tests/test_company/test_deep_dive_ko.py
-
-# Test Microsoft
-python tests/test_company/test_deep_dive_msft.py
-```
+Some tests and example analyses depend on external APIs, configured environment variables, or local services. Treat the test suite as part of the archived prototype rather than a maintained CI guarantee.
 
 ---
 
-## Contributing
+## Successor Direction
 
-We welcome contributions! Please see our development guidelines:
+basīrah informed a cleaner second-generation direction: a smaller multi-agent research workflow focused on role separation, synthesis, local-first watchlist/holdings context, and markdown memo generation.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
----
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file for details.
+The key lesson was scope control: the most useful portfolio version of this idea is not a full investment platform, but a clear and explainable AI research workflow.
 
 ---
 
 ## Disclaimer
 
-**basīrah is a research and educational tool.**
-
-This software is provided for informational purposes only and does not constitute financial advice. Always conduct your own due diligence and consult with qualified financial advisors before making investment decisions.
+This repository is for educational and research purposes only. It does not provide financial advice, investment recommendations, trading signals, or Sharia rulings. Always conduct independent due diligence and consult qualified professionals before making financial decisions.
 
 ---
 
-## Project Status
+## License
 
-> **⚠️ This project has been discontinued and archived.**
->
-> Development concluded and archived. While fully functional, the project's core utility was superseded by the release of native "Deep Research" capabilities in next-generation LLMs (e.g., Gemini, Claude), which can now perform similar long-context analysis out-of-the-box.
-
----
-
-<div align="center">
-
-**Built with ❤️ for value investors**
-
-*"Price is what you pay, value is what you get." - Warren Buffett*
-
-</div>
+MIT License - see [`LICENSE`](LICENSE) for details.

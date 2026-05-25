@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- Reframed the public README around the archived educational-prototype status.
+- Added `docs/LESSONS_LEARNED.md` with retrospective notes and successor-project direction.
+- Softened project-vision language to avoid implying production investment-advisor status.
+
 ### Added
 - Real-time progress reporting for multi-year analyses with year-by-year updates
 - Progress bar showing 0-100% completion during Deep Dive analyses

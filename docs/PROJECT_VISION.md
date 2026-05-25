@@ -1,8 +1,10 @@
 # basīrah: Autonomous Investment Analysis
 
+> Historical note: this document captures the original project vision. The repository is now archived as an educational prototype and portfolio artifact. For the current retrospective, see [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md).
+
 ## Vision
 
-Build an autonomous AI agent that analyzes companies using Warren Buffett's investment philosophy, with Sharia compliance verification. The agent should investigate, reason, and make investment decisions with the same rigor and skepticism as the Oracle of Omaha.
+Build an experimental AI agent that analyzes companies using Warren Buffett-inspired value-investing principles, with Sharia compliance verification as an additional research lens. The agent should investigate, reason, and explain its findings with rigor and skepticism.
 
 **basīrah** (بَصِيرَة) - Arabic for "insight" or "perceptiveness"
 
@@ -10,16 +12,16 @@ Build an autonomous AI agent that analyzes companies using Warren Buffett's inve
 
 ## What This Is
 
-**An autonomous investment analyst** that:
-- Reads annual reports (10-Ks) and earnings transcripts
-- Investigates business models and competitive moats
-- Assesses management quality and capital allocation
-- Calculates intrinsic value using Owner Earnings and DCF
-- Makes high-conviction BUY/WATCH/AVOID recommendations
-- Explains its complete reasoning process
-- Adapts its investigation based on what it discovers
+**An experimental AI research prototype** that explored how an LLM could:
+- Read annual reports (10-Ks) and other public-company materials
+- Investigate business models and competitive moats
+- Assess management quality and capital allocation
+- Estimate intrinsic value using owner-earnings and DCF-style concepts
+- Produce structured BUY/WATCH/AVOID-style research outputs for educational review
+- Explain its reasoning process and uncertainty
+- Adapt its investigation based on retrieved evidence
 
-**Think of it as:** Warren Buffett as an AI agent with 24/7 access to financial data.
+**Think of it as:** an archived experiment in tool-using AI for long-form investment research, not a production investment advisor.
 
 ---
 
